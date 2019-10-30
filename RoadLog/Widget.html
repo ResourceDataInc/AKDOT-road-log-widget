@@ -32,7 +32,7 @@
                 <td>                    
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_fromRouteLabel">${nls.fromRouteName}</span>
-                        <div data-dojo-type="widgets/OverlayEvents/lrscommon/js/form/RoutePicker" data-dojo-attach-point="_fromRouteInput" style="width: 100%;" required></div>
+                        <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/RoutePicker" data-dojo-attach-point="_fromRouteInput" style="width: 100%;" required></div>
                     </label>
                 </td>
             </tr>
@@ -40,7 +40,7 @@
                 <td>                    
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_fromMeasureLabel">${nls.fromMeasure}</span>
-                        <div data-dojo-type="widgets/OverlayEvents/lrscommon/js/form/MeasurePicker" data-dojo-attach-point="_fromMeasureInput" style="width: 100%;"></select>
+                        <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/MeasurePicker" data-dojo-attach-point="_fromMeasureInput" style="width: 100%;"></select>
                     </label>
                 </td>
             </tr>
@@ -48,7 +48,7 @@
                 <td>                    
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_toRouteLabel">${nls.toRouteName}</span>
-                        <div data-dojo-type="widgets/OverlayEvents/lrscommon/js/form/RoutePicker" data-dojo-attach-point="_toRouteInput" style="width: 100%;"></div>
+                        <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/RoutePicker" data-dojo-attach-point="_toRouteInput" style="width: 100%;"></div>
                     </label>
                 </td>
             </tr>
@@ -56,15 +56,13 @@
                 <td>                    
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_toMeasureLabel">${nls.toMeasure}</span>
-                        <div data-dojo-type="widgets/OverlayEvents/lrscommon/js/form/MeasurePicker" data-dojo-attach-point="_toMeasureInput" style="width: 100%;"></select>
+                        <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/MeasurePicker" data-dojo-attach-point="_toMeasureInput" style="width: 100%;"></select>
                     </label>
                 </td>
             </tr>
             <tr>
                 <td class="alignTdRight">
-                    <div class="jimu-btn" data-dojo-attach-event="onClick:_pan" title="${nls.pan}">${nls.pan}</div>
-                    <div class="jimu-btn" data-dojo-attach-event="onClick:_zoom" title="${nls.zoom}">${nls.zoom}</div>
-                    <div class="jimu-btn" data-dojo-attach-event="onClick:_overlay" title="${nls.overlay}">${nls.overlay}</div>
+                    <div class="jimu-btn" data-dojo-attach-event="onClick:_runReport" title="Run Report">Run Report</div>
                 </td>
             </tr>
         </table>

@@ -1,6 +1,6 @@
 define({
     root:({
-        _widgetLabel: "Overlay Events",
+        _widgetLabel: "Road Log",
         clear: "Clear",
         domainCodeValue: "${0} - ${1}", // domain code, domain value
         enterFromRoute: "Choose a valid from route in the selected network.",

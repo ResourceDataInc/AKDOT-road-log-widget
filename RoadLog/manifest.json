@@ -1,12 +1,12 @@
 {
-  "name": "OverlayEvents",
+  "name": "RoadLog",
   "platform": "HTML",
   "version": "2.6.0",
   "wabVersion": "2.6.0",
-  "author": "Location Referencing Team",
+  "author": "Resource Data, Inc.",
   "description": "",
   "copyright": "",
-  "license": "http://www.apache.org/licenses/LICENSE-2.0",
+  "license": "",
   "properties": {
         "inPanel": true,
         "hasLocale": true,

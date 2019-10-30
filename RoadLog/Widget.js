@@ -1,22 +1,21 @@
 ///////////////////////////////////////////////////////////////////////////
 // Copyright 2017 Esri
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //    http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 ///////////////////////////////////////////////////////////////////////////
-
 define([
     "dojo/_base/array",
-    "dojo/_base/declare", 
+    "dojo/_base/declare",
     "dojo/_base/lang",
     "dojo/Deferred",
     "dojo/DeferredList",
@@ -28,6 +27,7 @@ define([
     "dijit/form/Select",
     "jimu/LayerStructure",
     "jimu/SelectionManager",
+    'jimu/CSVUtils',
     "esri/Color",
     "esri/graphicsUtils",
     "esri/layers/FeatureLayer",
@@ -36,6 +36,8 @@ define([
     "esri/symbols/SimpleLineSymbol",
     "esri/symbols/SimpleMarkerSymbol",
     "esri/tasks/FeatureSet",
+    "esri/tasks/QueryTask",
+    "esri/tasks/query",
     "./lrscommon/js/form/MeasurePicker",
     "./lrscommon/js/form/RoutePicker",
     "./lrscommon/js/LrsWidget",
@@ -46,8 +48,8 @@ define([
     "./lrscommon/js/util/routeName",
     "./lrscommon/js/util/utils"
 ], function(
-    array, declare, lang, Deferred, DeferredList, domAttr, domConstruct, domStyle, string, CheckBox, Select, LayerStructure, SelectionManager, 
-    Color, graphicsUtils, FeatureLayer, SimpleRenderer, PictureMarkerSymbol, SimpleLineSymbol, SimpleMarkerSymbol, FeatureSet, 
+    array, declare, lang, Deferred, DeferredList, domAttr, domConstruct, domStyle, string, CheckBox, Select, LayerStructure, SelectionManager,
+    CSVUtils, Color, graphicsUtils, FeatureLayer, SimpleRenderer, PictureMarkerSymbol, SimpleLineSymbol, SimpleMarkerSymbol, FeatureSet, QueryTask, Query,
     MeasurePicker, RoutePicker, LrsWidget, serviceInfoCache, domainUtils, geometryUtils, i18nUtils, routeNameUtils, utils
 ) {
     return declare([LrsWidget], {
@@ -57,7 +59,7 @@ define([
         _eventLayerCheckboxes: null,
         _layerStructure: null,
         _overlayLayerNodeId: null,
-        
+
         _onLrsLoaded: function() {
             this._layerStructure = LayerStructure.getInstance();
             this._setRouteInputConfig();
@@ -66,34 +68,34 @@ define([
             this._populateEventLayers();
             this.showContent();
         },
-        
+
         _setRouteInputConfig: function() {
             array.forEach([this._fromRouteInput, this._toRouteInput], function(routeInput) {
                 routeInput.selectOnGraphicsLayer = true;
                 routeInput.set("config", {
-                    mapManager: this._mapManager   
+                    mapManager: this._mapManager
                 });
-            }, this);  
+            }, this);
             this._toRouteInput.set("fromRouteForm", this._fromRouteInput);
             this._fromRouteInput.set("toRouteForm", this._toRouteInput);
         },
-        
+
         _setMeasureInputConfig: function() {
             this._fromMeasureInput.set("config", {
                 mapManager: this._mapManager,
                 routeInput: this._fromRouteInput
-            }); 
+            });
             this._fromMeasureInput.set("selectionSymbol", this._mapManager.getFromMeasureSymbol());
             this._fromMeasureInput.set("measurePrecision", this._mapManager.measurePrecision);
-            
+
             this._toMeasureInput.set("config", {
                 mapManager: this._mapManager,
                 routeInput: this._toRouteInput
-            }); 
+            });
             this._toMeasureInput.set("selectionSymbol", this._mapManager.getToMeasureSymbol());
             this._toMeasureInput.set("measurePrecision", this._mapManager.measurePrecision);
         },
-        
+
         _populateNetworkSelect: function() {
             this._networkSelect.removeOption(this._networkSelect.getOptions());
             var networkLayers = this._mapManager.lrsServiceConfig.networkLayers;
@@ -107,16 +109,19 @@ define([
             this._networkSelect.addOption(options);
             this._onNetworkSelectChange();
         },
-        
+
         _onNetworkSelectChange: function() {
             var networkLayer = utils.findLayer(this._networkSelect.get("value"), this._mapManager.lrsServiceConfig.networkLayers);
             if (networkLayer && networkLayer != this._networkLayer) {
                 this.set("networkLayer", networkLayer);
             }
         },
-        
+
         _setNetworkLayerAttr: function(val) {
-            if (this._networkLayer != val) {                
+            if (this._networkLayer != val) {
+				//Search by Route_Name
+				val.routeNameFieldName = "Route_Name";
+				//
                 this._networkLayer = val;
                 this._makeNetworkLayerVisible();
                 this._fromRouteInput.set("networkLayer", this._networkLayer);
@@ -144,7 +149,7 @@ define([
                 domAttr.set(this._toMeasureLabel, "innerHTML", string.substitute(this.nls.toMeasureWithUnits, [utils.getUnitsString(this._networkLayer.unitsOfMeasure, true)]));
             }
         },
-        
+
         /*
          * Makes the selected network layer visible on the map if it isn't already
          */
@@ -152,17 +157,15 @@ define([
             var layerId = this._networkLayer ? this._networkLayer.id : null;
             this._mapManager.makeLrsLayerVisible(layerId);
         },
-        
+
         /*
          * Creates the event layer checkboxes
          */
         _populateEventLayers: function() {
             var eventsDiv = "_eventsDiv";
-            var linearEvents = array.filter(this._mapManager.lrsServiceConfig.eventLayers, function(eventLayer) {
-                return eventLayer.type == "esriLRSLinearEventLayer";
-            }, this);
-            var half = linearEvents.length/2;
-            this._eventLayerCheckboxes = array.map(linearEvents, function(eventLayer, i) {
+            var allEvents = this._mapManager.lrsServiceConfig.eventLayers;
+            var half = allEvents.length/2;
+            this._eventLayerCheckboxes = array.map(allEvents, function(eventLayer, i) {
                 var parent = eventsDiv + (i < half ? "1":"2");
                 parent = eventsDiv + "1";
                 var label = domConstruct.create("label", {innerHTML: eventLayer.name, style: {display: "block"}}, this[parent]);
@@ -174,91 +177,13 @@ define([
                 return check;
             }, this);
         },
-        
-        _pan: function() {
-            this._panOrZoom("pan");
-        },
-        
-        _zoom: function() {
-            this._panOrZoom("zoom");
-        },
-        
-        /*
-         * Pans or zooms to the selected route and measures
-         */
-        _panOrZoom: function(type) {
-            this.showBusy();
-            var mapFunc = type == "pan" ? lang.hitch(this._mapManager, this._mapManager.pan) : lang.hitch(this._mapManager, this._mapManager.zoom);
-            var defds = [this._fromRouteInput.getRouteValues()];
-            if (this._networkLayer && this._networkLayer.supportsLines) {
-                defds.push(this._toRouteInput.getRouteValues());
-            }
-            new DeferredList(defds).then(lang.hitch(this, function(responses) {
-                var fromRouteValues = responses[0][1];
-                var toRouteValues = responses.length > 1 ? responses[1][1] : null;
-                if (this._areRoutesValid(fromRouteValues, toRouteValues)) {
-                    var defds = [
-                        this._fromMeasureInput.getMeasure(),
-                        this._toMeasureInput.getMeasure()
-                    ];
-                    new DeferredList(defds).then(lang.hitch(this, function(responses) {
-                        this.hideBusy();
-                        var fromMeasureValues = responses[0][1];
-                        var toMeasureValues = responses[1][1];  
-                        if (this._areMeasuresValid(fromMeasureValues, toMeasureValues) && this._areToInputsValid(toRouteValues, toMeasureValues, fromMeasureValues)) {
-                            var fromRouteId = fromRouteValues.routeId;
-                            var toRouteId = toRouteValues ? toRouteValues.routeId : null;
-                            var fromMeasure = fromMeasureValues.measure;
-                            var toMeasure = toMeasureValues.measure;
-                            if (utils.isValidNumber(fromMeasure) && utils.isValidNumber(toMeasure)) {
-                                // both measures so zoom to from/to measure section
-                                this.showBusy();
-                                this._getPartialRoute(fromRouteId, toRouteId, fromMeasure, toMeasure).then(lang.hitch(this, function(geom) {
-                                    this.hideBusy();
-                                    mapFunc(geom);
-                                }), lang.hitch(this, function(err) {
-                                    this.hideBusy();
-                                    this.showMessage(this.nls.noMeasuresGeometry);
-                                    console.log(err);
-                                }));
-                            } else if (utils.isValidNumber(fromMeasure)) {
-                                // no to measure so zoom to from measure
-                                mapFunc(fromMeasureValues.geometry);
-                            } else if (utils.isValidNumber(toMeasure)) {
-                                // no from measure so zoom to to measure
-                                mapFunc(toMeasureValues.geometry);
-                            } else {
-                                // no measure so zoom to route
-                                var geom = null;
-                                if (toRouteId != null) {
-                                    if (this._fromRouteInput.selectionFeatures && this._fromRouteInput.selectionFeatures.length > 0) {
-                                        geom = graphicsUtils.graphicsExtent(this._fromRouteInput.selectionFeatures);
-                                    }
-                                } else {
-                                    geom = fromRouteValues.routeFeature ? fromRouteValues.routeFeature.geometry : null;
-                                }
-                                if (geom) {
-                                    mapFunc(geom);
-                                } else {
-                                    this.showMessage(this.nls.noGeometry);
-                                }
-                            }
-                        } else {
-                            this.hideBusy();
-                        }
-                    }));
-                } else {
-                    this.hideBusy();
-                }
-            }));
-        },
-        
+
         /*
          * Gets the routes and measures from the inputs
          */
         _getRoutesAndMeasures: function() {
             var defd = new Deferred();
-            
+
             var defds = [
                 this._fromMeasureInput.getMeasure(),
                 this._toMeasureInput.getMeasure(),
@@ -267,7 +192,7 @@ define([
             if (this._networkLayer && this._networkLayer.supportsLines) {
                 defds.push(this._toRouteInput.getRouteValues());
             }
-            
+
             new DeferredList(defds).then(lang.hitch(this, function(responses) {
                 var fromMeasureValues = responses[0][1];
                 var toMeasureValues = responses[1][1];
@@ -275,10 +200,10 @@ define([
                 var toRouteValues = responses.length > 3 ? responses[3][1] : null;
                 defd.resolve({fromMeasureValues: fromMeasureValues, toMeasureValues: toMeasureValues, fromRouteValues: fromRouteValues, toRouteValues: toRouteValues});
             }));
-            
+
             return defd;
         },
-        
+
         /*
          * Makes sure the routes are valid and if lines are supported that the from and to route are on the same line
          */
@@ -292,24 +217,24 @@ define([
                 }
                 return false;
             }
-            
+
             if (this._networkLayer.supportsLines) {
                 var toInvalid = !this._toRouteInput.get("isValidRoute");
                 if (toInvalid) {
                     this.showMessage(this.nls.invalidToRoute);
                     return false;
                 }
-            }  
-            
+            }
+
             return true;
         },
-        
+
         /*
          * Make sure the measures are valid numbers
          */
         _areMeasuresValid: function(fromMeasureValues, toMeasureValues) {
             var fromInvalid = (utils.isValidNumber(fromMeasureValues.measure) && !fromMeasureValues.valid);
-            var toInvalid = (utils.isValidNumber(toMeasureValues.measure) && !toMeasureValues.valid);  
+            var toInvalid = (utils.isValidNumber(toMeasureValues.measure) && !toMeasureValues.valid);
             if (fromInvalid && toInvalid) {
                 this.showMessage(this.nls.invalidFromAndToMeasures);
                 return false;
@@ -322,13 +247,13 @@ define([
             }
             return true;
         },
-        
+
         /*
          * Makes sure if to inputs are provided that from inputs were also provided
          */
         _areToInputsValid: function(toRouteValues, toMeasureValues, fromMeasureValues) {
             var message = null;
-            if (toRouteValues) {                
+            if (toRouteValues) {
                 var toMeasureProvided = utils.isValidNumber(toMeasureValues.measure);
                 var fromMeasureProvided = utils.isValidNumber(fromMeasureValues.measure);
                 var toRouteProvided = toRouteValues.routeId != null;
@@ -346,7 +271,7 @@ define([
             }
             return true;
         },
-        
+
         /*
          * Gets a partial route geometry based on measures
          */
@@ -354,7 +279,7 @@ define([
             var defd = new Deferred();
             var map = this._mapManager.map;
             var networkLayer = this._networkLayer;
-            var location = { 
+            var location = {
                 routeId: routeId,
                 fromMeasure: fromMeasure,
                 toMeasure: toMeasure
@@ -366,7 +291,7 @@ define([
                 locations: [location],
                 outSR: map.spatialReference.toJson()
             };
-                
+
             this._mapManager.lrsServiceTask.measureToGeometry(networkLayer.id, params).then(lang.hitch(this, function(response) {
                 var foundLocation = null;
                 if (response && response.locations && response.locations.length > 0) {
@@ -384,377 +309,243 @@ define([
             }));
             return defd;
         },
-        
+
         _selectAllEvents: function() {
             array.forEach(this._eventLayerCheckboxes, function(eventCheck) {
                 eventCheck.set("checked", true);
             }, this);
         },
-        
+
         _clearAllEvents: function() {
             array.forEach(this._eventLayerCheckboxes, function(eventCheck) {
                 eventCheck.set("checked", false);
             }, this);
         },
-        
+
         /*
-         * Overlay the selected events
+         * Generate report (csv) of selected events
          */
-        _overlay: function() {
-            var eventLayers = this._getSelectedEventLayers();
-            if (eventLayers == null || eventLayers.length < 1) {
-                this.showMessage(this.nls.noEventsSelected);
-                return;
-            }
-            this.showBusy();
-            this._getRoutesAndMeasures().then(lang.hitch(this, function(routesAndMeasures) {
+        _runReport: function() {
+          var eventMasterList = [];
+          var routeId = null;
+          var routeName = null;
+          var maxAttributeCount = 0;
+
+          var eventLayers = this._getSelectedEventLayers();
+          if (eventLayers == null || eventLayers.length < 1) {
+            this.showMessage(this.nls.noEventsSelected);
+            return;
+          }
+          var layersProcessed = 0;
+          var layersTotal = eventLayers.length;
+
+          this.showBusy();
+          this._getRoutesAndMeasures()
+          .then(lang.hitch(this, function(routesAndMeasures) {
                 var fromRouteValues = routesAndMeasures.fromRouteValues;
                 var toRouteValues = routesAndMeasures.toRouteValues;
                 var fromMeasureValues = routesAndMeasures.fromMeasureValues;
                 var toMeasureValues = routesAndMeasures.toMeasureValues;
-                if (this._areRoutesValid(fromRouteValues, toRouteValues) && 
-                    this._areMeasuresValid(fromMeasureValues, toMeasureValues) && 
-                    this._areToInputsValid(toRouteValues, toMeasureValues, fromMeasureValues)
-                ) {
-                    var fromRouteId = fromRouteValues.routeId;
-                    var toRouteId = toRouteValues ? toRouteValues.routeId : null;
-                    var fromMeasure = fromMeasureValues.measure;
-                    var toMeasure = toMeasureValues.measure;
-                    var location = this._getLocation(fromRouteId, toRouteId, fromMeasure, toMeasure);
-                    var attributeSet = this._getAttributeSet(eventLayers);
-                    var params = {
-                        locations: [location],
-                        attributeSet: attributeSet,
-                        outSR: this._mapManager.map.spatialReference.toJson()
-                    };
-                    // do the event overlay
-                    this._mapManager.lrsServiceTask.queryAttributeSet(this._networkLayer.id, params).then(lang.hitch(this, function(response) {
-                        this.hideBusy();
-                        // remove object ID fields before mapping the new field names to old field names so that the object ID fields do not mess up the count
-                        this._fixObjectId(response);
-                        // map new field names to old field names and event layers
-                        var newFieldNameToOldInfo = this._createNewFieldNameToOldInfo(response.geometryType, response.fields, attributeSet);
-                        var layerIdToOldToNewFieldNames = this._createLayerIdToOldToNewFieldNames(response.geometryType, response.fields, attributeSet);
-                        // make the data pretty
-                        this._applyMeasurePrecision(response);
-                        this._applyDomains(response, newFieldNameToOldInfo, layerIdToOldToNewFieldNames);
-                        this._updateFieldAlias(response, newFieldNameToOldInfo);
-                        // add a new feature layer to the map
-                        this._addOverlayToMap(response);
-                    }), lang.hitch(this, function(err) {
-                        this.hideBusy();
-                        console.log("query attribute set error");
-                        console.log(err);
-                        var errorDetail = err ? err.message : "";
-                        if (!errorDetail) {
-                            errorDetail = "";
-                        }
-                        if (err.details && err.details.length > 0) {
-                            errorDetail += "\n" + err.details.join("\n");
-                        }
-                        this.showErrorMessage(this.nls.queryAttributeSetError, errorDetail);
-                    }));
-                } else {
-                    this.hideBusy();
-                }
-            }));
-        },
-        
-        /*
-         * Round the from and to measure fields to the measure precision in config or of the network
-         */
-        _applyMeasurePrecision: function(featureSet) {
-            var networkLayer = this._networkLayer;
-            if (networkLayer && featureSet && featureSet.features) {
-                var measurePrecision = utils.isValidNumber(this._mapManager.measurePrecision) ? this._mapManager.measurePrecision : networkLayer.measurePrecision;
-                var fields = featureSet.geometryType == "esriGeometryPoint" ? ["measure"] : ["to_measure", "from_measure"];
-                array.forEach(featureSet.features, function(feature) {
-                    array.forEach(fields, function(field) {
-                        feature.attributes[field] = parseFloat(i18nUtils.formatNumber(feature.attributes[field], measurePrecision));
-                    }, this);
-                }, this);
-            }
-        },
-        
-        /*
-         * Apply domain and subtype values
-         */
-        _applyDomains: function(featureSet, newFieldNameToOldInfo, layerIdToOldToNewFieldNames) {
-            array.forEach(featureSet.features, function(feature) {
-                var originalValues = lang.clone(feature.attributes);
-                for (newField in feature.attributes) {
-                    var oldInfo = newFieldNameToOldInfo[newField];
-                    if (oldInfo) {
-                        var attributes = null;
-                        if (oldInfo.eventLayer.subtypeFieldName) {
-                            attributes = {};
-                            attributes[oldInfo.eventLayer.subtypeFieldName] = originalValues[layerIdToOldToNewFieldNames[oldInfo.eventLayer.id][oldInfo.eventLayer.subtypeFieldName]];
-                        }
-                        var codedValues = domainUtils.getCodedValues(oldInfo.field, oldInfo.eventLayer, attributes);
-                        if (codedValues) {
-                            var code = feature.attributes[newField];
-                            var name = domainUtils.findName(codedValues, code);
-                            if (name != null && name != code) {
-                                feature.attributes[newField] = string.substitute(this.nls.domainCodeValue, [code, name]);
-                            } 
-                        }
+                if (
+                  this._areRoutesValid(fromRouteValues, toRouteValues) &&
+                  this._areMeasuresValid(fromMeasureValues, toMeasureValues) &&
+                  this._areToInputsValid(toRouteValues, toMeasureValues, fromMeasureValues)
+                )
+                {
+                  routeId = fromRouteValues.routeId;
+                  routeName = fromRouteValues.routeName;
+					        var fromMeasure = fromMeasureValues.measure;
+                  var toMeasure = toMeasureValues.measure;
+
+                  var AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                  var processLayerFunction = async function runIt(sentThis, eventLayer){
+                    var eventName = eventLayer.name;
+                    var eventType = eventLayer.type;
+
+                    var jsonContents = sentThis._getAttributeKey('./widgets/RoadLog/log_attributes_config.json');
+                    var obj = JSON.parse(jsonContents);
+                    var eventLayerAttributeFields = null;
+                    try {
+                      eventLayerAttributeFields = obj.EventLayers.filter(function(val) {
+                        return val.Name === eventName;
+                      })[0].Attributes;
                     }
-                };
-            }, this);
-        },
-        
-        /*
-         * Add the event layer name to field aliases
-         */
-        _updateFieldAlias: function(featureSet, newFieldNameToOldInfo) {
-            array.forEach(featureSet.fields, function(field) {
-                if (field.type != "esriFieldTypeOID") {
-                    var oldInfo = newFieldNameToOldInfo[field.name];
-                    if (oldInfo) {
-                        field.alias = string.substitute(this.nls.overlayFieldAlias, [oldInfo.eventLayer.name, field.alias]);
-                        featureSet.fieldAliases[field.name] = field.alias;
+                    catch(error) {
+                      eventLayerAttributeFields = [];
                     }
-                }
-            }, this);
-        },
-        
-        /*
-         * Creates and returns the mapping of new field name to an object with eventLayer and field.
-         * The new field name is the duplicate field name that got renamed by the REST operation queryAttributeSet.
-         */   
-        _createNewFieldNameToOldInfo: function(geometryType, resultFields, attributeSet) {
-            var eventLayers = this._mapManager.lrsServiceConfig.eventLayers;
-            var fieldIndex = this._getAttributeSetFieldStartIndex(geometryType);
-            var newFieldNameToOldInfo = {};
-            
-            if (resultFields && resultFields.length > fieldIndex) {
-                // We assume that result fields will be in the same order as the input attribute set.
-                array.forEach(attributeSet, function(set) {
-                    var eventLayerInfo = utils.findLayer(set.layerId, eventLayers);
-                    array.forEach(set.fields, function(fieldName) {
-                        newFieldNameToOldInfo[resultFields[fieldIndex].name] = {
-                            eventLayer: eventLayerInfo,
-                            field: utils.findField(eventLayerInfo.fields, fieldName)
-                        };
-                        fieldIndex++;
-                    }, this);
-                }, this);
-            }
-            return newFieldNameToOldInfo;
-        },
-        
-        /*
-         * Creates and returns the mapping of old field name to new field name for 
-         * each layer in the attribute set
-         */
-        _createLayerIdToOldToNewFieldNames: function(geometryType, resultFields, attributeSet) {
-            var fieldIndex = this._getAttributeSetFieldStartIndex(geometryType);
-            var layerIdToOldToNewFieldNames = {};
-            
-            if (resultFields && resultFields.length > fieldIndex) {
-                // We assume that result fields will be in the same order as the input attribute set.    
-                array.forEach(attributeSet, function(layerAttrSet) {
-                    var oldToNewFieldNames = {};
-                    array.forEach(layerAttrSet.fields, function(fieldName) {
-                        oldToNewFieldNames[fieldName] = resultFields[fieldIndex].name;
-                        fieldIndex++;
-                    }, this);
-                    layerIdToOldToNewFieldNames[layerAttrSet.layerId] = oldToNewFieldNames;
-                }, this);
-            }
-            return layerIdToOldToNewFieldNames;
-        },
-        
-        /*
-         * Returns start index of attribute set field in the query attribute set results.
-         * Skips the first two fields route_id and measure if result geometry type is Point.
-         * Skips the first three fields route_id, from_measure, and to_measure if result geometry type is Polyline.
-         * Skips the route name field if the network has route name
-         * Skips line ID, line name, and line order fields if the network supports lines 
-         */
-        _getAttributeSetFieldStartIndex: function(geometryType) {
-            var networkLayer = this._networkLayer;
-            var numFieldsToSkip = geometryType === "esriGeometryPoint" ? 2 : 3; //route id and measure fields
-            if (networkLayer) {
-                if (networkLayer.routeNameFieldName != null && networkLayer.routeNameFieldName != "") {
-                    numFieldsToSkip += 1; // route name
-                }
-                if (networkLayer.supportsLines) {
-                    numFieldsToSkip += 3;  // line ID, line name, line order
-                }
-            }
-            return numFieldsToSkip;
-        },
-        
-        // FeatureLayer needs just one unique object ID field.
-        // Since overlay events results have object IDs from multiple events and because of splitting
-        // they will not be unique, remove all of those fields and add one unique object ID field.
-        _fixObjectId: function(featureSet) {
-            // get list of current object ID fields and remove them from the featureSet fields
-            var objectIdFields = [];        
-            featureSet.fields = array.filter(featureSet.fields, function(field) {
-                if (field.type == "esriFieldTypeOID") {
-                    delete featureSet.fieldAliases[field.name];
-                    objectIdFields.push(field.name);
-                    return false;
-                }
-                return true;
-            }, this);
-            
-            // get a unique name for the new object ID field
-            var objectIdFieldName = utils.getUniqueFieldName("OBJECTID", null, featureSet.fields);
-            
-            // add the new object ID field to the featureSet fields
-            featureSet.fields.push({
-                "name": objectIdFieldName,
-                "type": "esriFieldTypeOID",
-                "alias": this.nls.objectIdFieldAlias
-            });
-            featureSet.fieldAliases[objectIdFieldName] = this.nls.objectIdFieldAlias;
-            
-            // remove the old object IDs from the feature attributes and add the new one
-            array.forEach(featureSet.features, function(feature, i) {
-                array.forEach(objectIdFields, function(objectIdField) {
-                    delete feature.attributes[objectIdField.name];
-                }, this);
-                feature.attributes[objectIdFieldName] = i;
-            }, this);
-        },
-        
-        /*
-         * Add the overlay result as a new feature layer to the map. Add it as a feature layer
-         * instead of a graphics layer so that the web appbuilder attribute table can use it.
-         */
-        _addOverlayToMap: function(featureSet) {
-            featureSet = new FeatureSet(featureSet);
-            var layer = new FeatureLayer({
-                featureSet: featureSet,
-                layerDefinition: {
-                    "geometryType": featureSet.geometryType,
-                    "fields": featureSet.fields
-                }
-            });
-            var renderer = new SimpleRenderer(this._getOverlaySymbol(featureSet.geometryType));
-            layer.setRenderer(renderer);
-            layer.name = "Overlay";
-            if (this._overlayLayerNodeId != null) {  
-                // remove old overlay from the map              
-                var oldLayer = this.map.getLayer(this._overlayLayerNodeId);
-                if (oldLayer) {
-                    oldLayer.clearSelection();
-                    this.map.removeLayer(oldLayer);
-                }
-            }
-            this._overlayLayerNodeId = null;
-            this.map.addLayer(layer);
-            this._overlayLayerNodeId = layer.id;
-            this._sendLayerToAttributeTable();
-        },
-        
-        _sendLayerToAttributeTable: function() {
-            if (this._overlayLayerNodeId != null) {
-                var layerInfo = this._layerStructure.getNodeById(this._overlayLayerNodeId);
-                if (layerInfo) {
-                    this.publishData({
-                        "target": "AttributeTable",
-                        "layer": layerInfo
-                    });
-                }
-            }
-        },
-        
-        _getOverlaySymbol: function(geometryType) {
-            if (geometryType == "esriGeometryPoint") {
-                return this._getOverlayPointSymbol(this.config);
-            } else {    
-                return this._getOverlayLineSymbol(this.config);           
-            }
-        },
-        
-        _getOverlayLineSymbol: function(config) {
-            if (config.overlayLineSymbol) {
-                return new SimpleLineSymbol(config.overlayLineSymbol);
-            } else {
-                return this._getDefaultLineSymbol();
-            }    
-        },
-        
-        _getDefaultLineSymbol: function() {
-            return new SimpleLineSymbol(
-                SimpleLineSymbol.STYLE_SOLID, 
-                new Color([255, 174, 0]), 
-                4.0
-            );
-        },
-        
-        _getOverlayPointSymbol: function(config) {
-            if (config.overlayPointSymbol) {
-                if (config.overlayPointSymbol.type == "esriSMS") {
-                    return new SimpleMarkerSymbol(config.overlayPointSymbol);
-                } else {
-                    return new PictureMarkerSymbol(config.overlayPointSymbol);
-                }
-            } else {
-                return this._getDefaultPointSymbol();
-            }
-        },
-        
-        _getDefaultPointSymbol: function() {
-            return new SimpleMarkerSymbol(
-                SimpleMarkerSymbol.STYLE_DIAMOND, 
-                12.0,
-                new SimpleLineSymbol (SimpleLineSymbol.STYLE_SOLID, new Color([255, 174, 0]), 2.0),
-                new Color([255, 211, 128])
-            ); 
-        },
-        
-        /*
-         * Returns the location parameter for query attribute set
-         */
-        _getLocation: function(fromRouteId, toRouteId, fromMeasure, toMeasure) {
-            var location = {
-                'routeId': fromRouteId
-            };
-            if (utils.isValidNumber(fromMeasure) && utils.isValidNumber(toMeasure)) {
-                location.fromMeasure = fromMeasure;
-                location.toMeasure = toMeasure;
-                if (toRouteId) {
-                    location.toRouteId = toRouteId;
-                }
-            } else if (utils.isValidNumber(fromMeasure)) {
-                location.measure = fromMeasure;
-            } else if (utils.isValidNumber(toMeasure)) {
-                location.measure = toMeasure;
-            }
-            return location;
-        },
-        
-        /*
-         * Returns the attribute set to use for query attribute set
-         */
-        _getAttributeSet: function(eventLayers) {
-            var attributeSet = [];
-            array.forEach(eventLayers, function(lrsEvent) {
-                var exclude = utils.getLrsFields(lrsEvent);
-                var objectIdField = utils.getObjectIdField(lrsEvent.fields);
-                if (objectIdField) {
-                    exclude.push(objectIdField.name.toLowerCase());
-                }
-                exclude = exclude.concat(["shape", "shape.len", "shape_len", "shape_length", "st_length(shape)", "shape.stlength()", "shape_area", "shape.starea()"]);
-                var fields = [];
-                array.forEach(lrsEvent.fields, function(field) {
-                    if (array.indexOf(exclude, field.name.toLowerCase()) == -1) {
-                        fields.push(field.name);
+
+                    var attributeCount = eventLayerAttributeFields.length;
+                    if (attributeCount > maxAttributeCount) {
+                      maxAttributeCount = attributeCount;
                     }
-                }, this);
-                attributeSet.push({
-                    layerId: lrsEvent.id,
-                    fields: fields
-                });
-            }, this);
-            return attributeSet;
-        },
-        
+
+                    var queryService = sentThis._mapManager.lrsMapLayerConfig.url + '/' + eventLayer.id;
+                    var queryTask = new QueryTask(queryService);
+                    var query = new Query();
+                    query.returnGeometry = false;
+                    query.where = sentThis._getWhereParameter(routeId, fromMeasure, toMeasure, eventType);
+                    query.outFields = ["*"];
+
+                    if (eventType === "esriLRSPointEventLayer") {
+                      await queryTask.execute(query, lang.hitch(sentThis, function(response){
+                        array.forEach(response.features, function(feature) {
+                          //Start and End measures
+                          var eventMeasure = feature.attributes.MPT;
+                          var eventAttributes = sentThis._getEventAttributes(eventLayerAttributeFields, feature);
+
+                            // generate json objects from attribute table fields
+                            var eventJson = {
+                              "Route ID": routeId,
+                              "Route Name": routeName,
+                              "Measure": eventMeasure,
+                              "Feature": eventName,
+                              "LocationSort": 2,
+                              "Location": "Point"
+                            };
+
+                            //Add Attributes Unique to this Event Layer
+                            var attributeIndex = 0;
+                            array.forEach(eventAttributes, function(attribute){
+                              var fieldNameObject = {};
+                              eventJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFields[attributeIndex].toString() + ': ' + eventAttributes[attributeIndex].toString();
+                              attributeIndex++;
+                            }, sentThis);
+
+                            eventMasterList.push(eventJson);
+                        }, sentThis); //End Feature forEach
+                      })); //End queryTask
+                    } //End if PointEventLayer
+                    if (eventType === "esriLRSIntersectionEventLayer") {}
+                    if (eventType === "esriLRSLinearEventLayer") {
+
+                      await queryTask.execute(query, lang.hitch(sentThis, function(response){
+                        array.forEach(response.features, function(feature) {
+                          //Start and End measures
+                          var eventStart = fromMeasure != null && feature.attributes.From_MPT < fromMeasure ? fromMeasure: feature.attributes.From_MPT;
+                          var eventEnd = toMeasure != null && feature.attributes.To_MPT > toMeasure ? toMeasure : feature.attributes.To_MPT;
+                          var eventAttributes = sentThis._getEventAttributes(eventLayerAttributeFields, feature);
+
+                            // generate json objects from attribute table fields
+                            var eventStartJson = {
+                              "Route ID": routeId,
+                              "Route Name": routeName,
+                              "Measure": eventStart,
+                              "Feature": eventName,
+                              "LocationSort": 3,
+                              "Location": "Begin"
+                            };
+
+                            var eventEndJson = {
+                              "Route ID": routeId,
+                              "Route Name": routeName,
+                              "Measure": eventEnd,
+                              "Feature": eventName,
+                              "LocationSort": 1,
+                              "Location": "End"
+                            };
+
+                            //Add Attributes Unique to this Event Layer
+                            var attributeIndex = 0;
+                            array.forEach(eventAttributes, function(attribute){
+                              var fieldNameObject = {};
+                              eventStartJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFields[attributeIndex].toString() + ': ' + eventAttributes[attributeIndex].toString();
+                              eventEndJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFields[attributeIndex].toString() + ': ' + eventAttributes[attributeIndex].toString();
+                              attributeIndex++;
+                            }, sentThis);
+
+                            eventMasterList.push(eventStartJson);
+                            eventMasterList.push(eventEndJson);
+                        }, sentThis); //End Feature forEach
+                      })); //End queryTask
+                    } //End if LinearEventLayer
+                  } //End processLayerFunction;
+
+                  var sendThis = this;
+                  var layerProcess = [];
+                  eventLayers.map(eventLayer => {
+                    layerProcess.push(processLayerFunction(sendThis, eventLayer));
+                  });
+
+                  Promise.all(layerProcess).then(function(){
+                    sendThis._downloadFile(routeId, eventMasterList, maxAttributeCount);
+                    sendThis.hideBusy();
+                  })
+
+
+                } //End If Valid
+              }))
+            },
+
+        /*
+         * Sort JSON and download as CSV
+         */
+        _downloadFile: function(routeId, eventMasterList, maxAttributeCount){
+          //Sort by measure and then ocation type
+          eventMasterList.sort(function(a, b) {
+            if (a.Measure === b.Measure) {
+              return a.LocationSort - b.LocationSort;
+            }
+            return a.Measure - b.Measure;
+          });
+
+          //Setup CSV columns with LocationSort removed
+          var csvColumns = ['Route ID','Route Name','Measure','Feature','Location'];
+          var attributeNumber = 1;
+          while (attributeNumber <= maxAttributeCount) {
+            csvColumns.push("Attribute" + attributeNumber.toString());
+            attributeNumber++;
+          }
+          CSVUtils.exportCSV("RoadLog_" + routeId.toString(), eventMasterList, csvColumns);
+          },
+
+		/*
+		 * Get Attribute Key for Events
+		 */
+		_getAttributeKey: function(pathName){
+			var Httpreq = new XMLHttpRequest(); // a new request
+			Httpreq.open("GET",pathName,false);
+			Httpreq.send(null);
+			return Httpreq.responseText;
+			},
+
+		/*
+		 * Get Attributes for Event
+		 */
+		_getEventAttributes: function(fieldNames, feature){
+			var eventAttributeValues = []
+
+			array.forEach(fieldNames, function(fieldName) {
+				var fieldValue = feature.attributes[fieldName];
+				eventAttributeValues.push(fieldValue);
+				}, this);
+			return eventAttributeValues ;
+			},
+
+      /*
+  		 * Get Where Parameter
+  		 */
+  		_getWhereParameter: function(routeId, fromMeasure, toMeasure, eventType) {
+        var whereParam = "Route_ID = '" + routeId.toString() + "'";
+
+        if (eventType === "esriLRSLinearEventLayer") {
+          if (fromMeasure !== null) {
+            whereParam = whereParam + ' AND To_MPT >= ' + fromMeasure.toString();
+          }
+          if (toMeasure !== null) {
+            whereParam = whereParam + ' AND From_MPT <= ' + toMeasure.toString();
+          }
+        }
+        else {
+          if (fromMeasure !== null) {
+            whereParam = whereParam + ' AND MPT >= ' + fromMeasure.toString();
+          }
+          if (toMeasure !== null) {
+            whereParam = whereParam + ' AND MPT <= ' + toMeasure.toString();
+          }
+        }
+        return whereParam;
+  		},
+
         _getSelectedEventLayers: function() {
             var layers = [];
             array.forEach(this._eventLayerCheckboxes, function(eventCheck) {
@@ -772,9 +563,9 @@ define([
                     }
                 }
             }, this);
-            return layers; 
+            return layers;
         },
-        
+
         onClose: function() {
             this._fromMeasureInput.setMeasure(null, null, false);
             this._toMeasureInput.setMeasure(null, null, false);
@@ -785,6 +576,6 @@ define([
             this._toRouteInput.deactivate();
             this._fromRouteInput.deactivate();
         }
-        
+
     });
 });
