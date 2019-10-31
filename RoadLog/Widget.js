@@ -1,17 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////
-// Copyright 2017 Esri
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//    http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//Road Log Widget
 ///////////////////////////////////////////////////////////////////////////
 define([
     "dojo/_base/array",
@@ -163,7 +151,21 @@ define([
          */
         _populateEventLayers: function() {
             var eventsDiv = "_eventsDiv";
-            var allEvents = this._mapManager.lrsServiceConfig.eventLayers;
+            var eventLayers = this._mapManager.lrsServiceConfig.eventLayers;
+            var intersectionLayers = this._mapManager.lrsServiceConfig.intersectionLayers;
+            var allEvents = eventLayers.concat(intersectionLayers);
+
+            allEvents.sort(function(a, b) {
+              if (a.name < b.name) {
+                return -1;
+              }
+              if (a.name > b.name) {
+                return 1;
+              }
+              // names must be equal
+              return 0;
+            });
+
             var half = allEvents.length/2;
             this._eventLayerCheckboxes = array.map(allEvents, function(eventLayer, i) {
                 var parent = eventsDiv + (i < half ? "1":"2");
@@ -362,13 +364,21 @@ define([
                     var eventName = eventLayer.name;
                     var eventType = eventLayer.type;
 
-                    var jsonContents = sentThis._getAttributeKey('./widgets/RoadLog/log_attributes_config.json');
+                    var jsonContents = await sentThis._getAttributeKey('./widgets/RoadLog/log_attributes_config.json');
                     var obj = JSON.parse(jsonContents);
                     var eventLayerAttributeFields = null;
                     try {
-                      eventLayerAttributeFields = obj.EventLayers.filter(function(val) {
-                        return val.Name === eventName;
-                      })[0].Attributes;
+                      if (eventType === "esriLRSIntersectionLayer") {
+                        eventLayerAttributeFields = obj.IntersectionLayers.filter(function(val) {
+                          return val.Name === eventName;
+                        })[0].Attributes;
+                      }
+                      else {
+                        eventLayerAttributeFields = obj.EventLayers.filter(function(val) {
+                          return val.Name === eventName;
+                        })[0].Attributes;
+                      }
+
                     }
                     catch(error) {
                       eventLayerAttributeFields = [];
@@ -386,14 +396,14 @@ define([
                     query.where = sentThis._getWhereParameter(routeId, fromMeasure, toMeasure, eventType);
                     query.outFields = ["*"];
 
-                    if (eventType === "esriLRSPointEventLayer") {
+                    if (eventType === "esriLRSPointEventLayer" || eventType === "esriLRSIntersectionLayer") {
                       await queryTask.execute(query, lang.hitch(sentThis, function(response){
                         array.forEach(response.features, function(feature) {
                           //Start and End measures
                           var eventMeasure = feature.attributes.MPT;
                           var eventAttributes = sentThis._getEventAttributes(eventLayerAttributeFields, feature);
 
-                            // generate json objects from attribute table fields
+                            // Generate json objects from attribute table fields
                             var eventJson = {
                               "Route ID": routeId,
                               "Route Name": routeName,
@@ -415,7 +425,6 @@ define([
                         }, sentThis); //End Feature forEach
                       })); //End queryTask
                     } //End if PointEventLayer
-                    if (eventType === "esriLRSIntersectionEventLayer") {}
                     if (eventType === "esriLRSLinearEventLayer") {
 
                       await queryTask.execute(query, lang.hitch(sentThis, function(response){
@@ -425,7 +434,7 @@ define([
                           var eventEnd = toMeasure != null && feature.attributes.To_MPT > toMeasure ? toMeasure : feature.attributes.To_MPT;
                           var eventAttributes = sentThis._getEventAttributes(eventLayerAttributeFields, feature);
 
-                            // generate json objects from attribute table fields
+                            // Generate JSON objects from attribute table fields
                             var eventStartJson = {
                               "Route ID": routeId,
                               "Route Name": routeName,
@@ -470,8 +479,6 @@ define([
                     sendThis._downloadFile(routeId, eventMasterList, maxAttributeCount);
                     sendThis.hideBusy();
                   })
-
-
                 } //End If Valid
               }))
             },
@@ -501,11 +508,11 @@ define([
 		/*
 		 * Get Attribute Key for Events
 		 */
-		_getAttributeKey: function(pathName){
+		_getAttributeKey: async function(pathName){
 			var Httpreq = new XMLHttpRequest(); // a new request
 			Httpreq.open("GET",pathName,false);
 			Httpreq.send(null);
-			return Httpreq.responseText;
+			return await Httpreq.responseText;
 			},
 
 		/*
@@ -520,8 +527,8 @@ define([
 				}, this);
 			return eventAttributeValues ;
 			},
-
-      /*
+			
+		/*
   		 * Get Where Parameter
   		 */
   		_getWhereParameter: function(routeId, fromMeasure, toMeasure, eventType) {
@@ -546,18 +553,36 @@ define([
         return whereParam;
   		},
 
+		/*
+  		 * Get Selected Event Layers
+  		 */
         _getSelectedEventLayers: function() {
             var layers = [];
             array.forEach(this._eventLayerCheckboxes, function(eventCheck) {
                 if (eventCheck.get("checked")) {
                     var layer = null;
+
+                    //Event Layers
                     array.some(this._mapManager.lrsServiceConfig.eventLayers, function(eventLayer) {
+                        if (eventLayer.id == eventCheck.value) {
+                            layer = eventLayer;
+                            return true;
+                        }
+                        else {
+
+                        }
+                        return false;
+                    }, this);
+
+                    //Intersections
+                    array.some(this._mapManager.lrsServiceConfig.intersectionLayers, function(eventLayer) {
                         if (eventLayer.id == eventCheck.value) {
                             layer = eventLayer;
                             return true;
                         }
                         return false;
                     }, this);
+
                     if (layer) {
                         layers.push(layer);
                     }
