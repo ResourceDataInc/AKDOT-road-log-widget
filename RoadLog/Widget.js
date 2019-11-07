@@ -35,6 +35,7 @@ define([
     "./lrscommon/js/util/i18n",
     "./lrscommon/js/util/routeName",
     "./lrscommon/js/util/utils"
+
 ], function(
     array, declare, lang, Deferred, DeferredList, domAttr, domConstruct, domStyle, string, CheckBox, Select, LayerStructure, SelectionManager,
     CSVUtils, Color, graphicsUtils, FeatureLayer, SimpleRenderer, PictureMarkerSymbol, SimpleLineSymbol, SimpleMarkerSymbol, FeatureSet, QueryTask, Query,
@@ -53,7 +54,11 @@ define([
             this._setRouteInputConfig();
             this._setMeasureInputConfig();
             this._populateNetworkSelect();
-            this._populateEventLayers();
+            this._getAttributeConfig(lang.hitch(this, function(text){
+              var json = JSON.parse(text);
+              this._populateEventLayers(json);
+            }));
+
             this.showContent();
         },
 
@@ -149,36 +154,55 @@ define([
         /*
          * Creates the event layer checkboxes
          */
-        _populateEventLayers: function() {
+        _populateEventLayers: function(json) {
             var eventsDiv = "_eventsDiv";
             var eventLayers = this._mapManager.lrsServiceConfig.eventLayers;
             var intersectionLayers = this._mapManager.lrsServiceConfig.intersectionLayers;
-            var allEvents = eventLayers.concat(intersectionLayers);
+            var unfilteredEvents = eventLayers.concat(intersectionLayers);
 
-            allEvents.sort(function(a, b) {
-              if (a.name < b.name) {
-                return -1;
-              }
-              if (a.name > b.name) {
-                return 1;
-              }
-              // names must be equal
-              return 0;
-            });
+            //Filter by config file
+            var intersectionjson = json.IntersectionLayers.map(function(layer){
+                return layer.Name;
+              });
+            var eventjson = json.EventLayers.map(function(layer){
+                return layer.Name;
+              })
+            jsonArray = eventjson.concat(intersectionjson);
 
-            var half = allEvents.length/2;
-            this._eventLayerCheckboxes = array.map(allEvents, function(eventLayer, i) {
-                var parent = eventsDiv + (i < half ? "1":"2");
-                parent = eventsDiv + "1";
-                var label = domConstruct.create("label", {innerHTML: eventLayer.name, style: {display: "block"}}, this[parent]);
-                var check = new CheckBox({
-                    value: eventLayer.id,
-                    checked: false
-                });
-                domConstruct.place(check.domNode, label, "first");
-                return check;
-            }, this);
-        },
+            var filteredEvents = unfilteredEvents.filter(function(s){
+                if (jsonArray.includes(s.name)) {
+                  return true;
+                }
+                else {
+                  return false;
+                }
+              });
+
+            //Sort alphabetically
+            filteredEvents.sort(function(a, b) {
+                if (a.name < b.name) {
+                  return -1;
+                }
+                if (a.name > b.name) {
+                  return 1;
+                }
+                // names must be equal
+                return 0;
+              });
+
+              var half = filteredEvents.length/2;
+              this._eventLayerCheckboxes = array.map(filteredEvents, function(eventLayer, i) {
+                  var parent = eventsDiv + (i < half ? "1":"2");
+                  parent = eventsDiv + "1";
+                  var label = domConstruct.create("label", {innerHTML: eventLayer.name, style: {display: "block"}}, this[parent]);
+                  var check = new CheckBox({
+                      value: eventLayer.id,
+                      checked: false
+                  });
+                  domConstruct.place(check.domNode, label, "first");
+                  return check;
+              }, this);
+          },
 
         /*
          * Gets the routes and measures from the inputs
@@ -328,6 +352,7 @@ define([
          * Generate report (csv) of selected events
          */
         _runReport: function() {
+          var that = this;
           var eventMasterList = [];
           var routeId = null;
           var routeName = null;
@@ -359,87 +384,111 @@ define([
 					        var fromMeasure = fromMeasureValues.measure;
                   var toMeasure = toMeasureValues.measure;
 
-                  var AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-                  var processLayerFunction = async function runIt(sentThis, eventLayer){
+                  //This function runs the query for an event layer
+                  function getQuery(eventLayer, json) {
                     var eventName = eventLayer.name;
                     var eventType = eventLayer.type;
 
-                    var jsonContents = await sentThis._getAttributeKey('./widgets/RoadLog/log_attributes_config.json');
-                    var obj = JSON.parse(jsonContents);
-                    var eventLayerAttributeFields = null;
-                    try {
-                      if (eventType === "esriLRSIntersectionLayer") {
-                        eventLayerAttributeFields = obj.IntersectionLayers.filter(function(val) {
-                          return val.Name === eventName;
-                        })[0].Attributes;
-                      }
-                      else {
-                        eventLayerAttributeFields = obj.EventLayers.filter(function(val) {
-                          return val.Name === eventName;
-                        })[0].Attributes;
-                      }
-
+                    // Get Event Layer's Unique Attributes
+                    var eventLayerAttributeFields = [];
+                    if (eventType === "esriLRSIntersectionLayer") {
+                      eventLayerAttributeFields = json.IntersectionLayers.filter(function(val) {
+                        return val.Name === eventName;
+                      })[0].Attributes;
                     }
-                    catch(error) {
-                      eventLayerAttributeFields = [];
+                    else {
+                      eventLayerAttributeFields = json.EventLayers.filter(function(val) {
+                        return val.Name === eventName;
+                      })[0].Attributes;
                     }
 
+                    // Track Max Attribute Count
                     var attributeCount = eventLayerAttributeFields.length;
                     if (attributeCount > maxAttributeCount) {
                       maxAttributeCount = attributeCount;
                     }
 
-                    var queryService = sentThis._mapManager.lrsMapLayerConfig.url + '/' + eventLayer.id;
+                    //Set Up Query
+                    var queryService = that._mapManager.lrsMapLayerConfig.url + '/' + eventLayer.id;
                     var queryTask = new QueryTask(queryService);
                     var query = new Query();
                     query.returnGeometry = false;
-                    query.where = sentThis._getWhereParameter(routeId, fromMeasure, toMeasure, eventType);
+                    query.where = that._getWhereParameter(routeId, fromMeasure, toMeasure, eventType);
                     query.outFields = ["*"];
 
-                    if (eventType === "esriLRSPointEventLayer" || eventType === "esriLRSIntersectionLayer") {
-                      await queryTask.execute(query, lang.hitch(sentThis, function(response){
-                        array.forEach(response.features, function(feature) {
-                          //Start and End measures
-                          var eventMeasure = feature.attributes.MPT;
-                          var eventAttributes = sentThis._getEventAttributes(eventLayerAttributeFields, feature);
+                    var defd = new Deferred();
+                    var defds = [
+                        queryTask.execute(query)
+                    ];
 
-                            // Generate json objects from attribute table fields
-                            var eventJson = {
-                              "Route ID": routeId,
-                              "Route Name": routeName,
-                              "Measure": eventMeasure,
-                              "Feature": eventName,
-                              "LocationSort": 2,
-                              "Location": "Point"
-                            };
+                    new DeferredList(defds).then(lang.hitch(this, function(responses) {
+                      var response = responses[0][1];
+                      defd.resolve({eventLayer: eventLayer, result: response, attributes: eventLayerAttributeFields});
+                    }));
 
-                            //Add Attributes Unique to this Event Layer
-                            var attributeIndex = 0;
-                            array.forEach(eventAttributes, function(attribute){
-                              var fieldNameObject = {};
-                              eventJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFields[attributeIndex].toString() + ': ' + eventAttributes[attributeIndex].toString();
-                              attributeIndex++;
-                            }, sentThis);
+                    return defd;
+                  } //End function
 
-                            eventMasterList.push(eventJson);
-                        }, sentThis); //End Feature forEach
-                      })); //End queryTask
-                    } //End if PointEventLayer
-                    if (eventType === "esriLRSLinearEventLayer") {
+                  //This function processes the data returned from the query
+                  function processResult(featureSet, eventLayer, eventLayerAttributeFields) {
+                    // apply domains
+                    that._applyDomains(featureSet, eventLayer);
+                    // get field aliases
+                    var eventLayerAttributeFieldAliases = [];
+                      array.forEach(eventLayerAttributeFields, function(f1) {
+                        var field = eventLayer.fields.find(function(f2){
+                          return f2.name == f1;
+                        });
+                        eventLayerAttributeFieldAliases.push(field.alias);
+                      }, this);
 
-                      await queryTask.execute(query, lang.hitch(sentThis, function(response){
-                        array.forEach(response.features, function(feature) {
+                    if (eventLayer.type === "esriLRSPointEventLayer" || eventLayer.type === "esriLRSIntersectionLayer") {
+                      array.forEach(featureSet.features, function(feature) {
+                        //Start and End measures
+                        var eventMeasure = feature.attributes.MPT;
+                        var eventAttributeValues = that._getEventAttributes(eventLayerAttributeFields, feature);
+
+                          // Generate json objects from attribute table fields
+                          var eventJson = {
+                            "Route ID": routeId,
+                            "Route Name": routeName,
+                            "Measure": eventMeasure,
+                            "Feature": eventLayer.name,
+                            "LocationSort": 2,
+                            "Location": "Point"
+                          };
+
+                          //Add Attributes Unique to this Event Layer
+                          var attributeIndex = 0;
+                          array.forEach(eventAttributeValues, function(attribute){
+
+                            var attributeString = "";
+                            if (attribute != null) {
+                              attributeString  = eventAttributeValues[attributeIndex].toString();
+                            }
+
+                            var fieldNameObject = {};
+                            eventJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
+                            attributeIndex++;
+                          }, that);
+
+                          eventMasterList.push(eventJson);
+                      }, that); //End Feature forEach
+                    }
+
+                    if (eventLayer.type === "esriLRSLinearEventLayer") {
+                        array.forEach(featureSet.features, function(feature) {
                           //Start and End measures
                           var eventStart = fromMeasure != null && feature.attributes.From_MPT < fromMeasure ? fromMeasure: feature.attributes.From_MPT;
                           var eventEnd = toMeasure != null && feature.attributes.To_MPT > toMeasure ? toMeasure : feature.attributes.To_MPT;
-                          var eventAttributes = sentThis._getEventAttributes(eventLayerAttributeFields, feature);
+                          var eventAttributes = that._getEventAttributes(eventLayerAttributeFields, feature);
 
                             // Generate JSON objects from attribute table fields
                             var eventStartJson = {
                               "Route ID": routeId,
                               "Route Name": routeName,
                               "Measure": eventStart,
-                              "Feature": eventName,
+                              "Feature": eventLayer.name,
                               "LocationSort": 3,
                               "Location": "Begin"
                             };
@@ -448,7 +497,7 @@ define([
                               "Route ID": routeId,
                               "Route Name": routeName,
                               "Measure": eventEnd,
-                              "Feature": eventName,
+                              "Feature": eventLayer.name,
                               "LocationSort": 1,
                               "Location": "End"
                             };
@@ -457,31 +506,53 @@ define([
                             var attributeIndex = 0;
                             array.forEach(eventAttributes, function(attribute){
                               var fieldNameObject = {};
-                              eventStartJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFields[attributeIndex].toString() + ': ' + eventAttributes[attributeIndex].toString();
-                              eventEndJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFields[attributeIndex].toString() + ': ' + eventAttributes[attributeIndex].toString();
+
+                              var attributeString = "";
+                              if (attribute != null) {
+                                attributeString  = eventAttributes[attributeIndex].toString();
+                              }
+
+                              eventStartJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
+                              eventEndJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
                               attributeIndex++;
-                            }, sentThis);
+                            }, that);
 
                             eventMasterList.push(eventStartJson);
                             eventMasterList.push(eventEndJson);
-                        }, sentThis); //End Feature forEach
-                      })); //End queryTask
-                    } //End if LinearEventLayer
-                  } //End processLayerFunction;
+                          }, that); //End Feature forEach
+                        }
+                } //End function
 
-                  var sendThis = this;
-                  var layerProcess = [];
-                  eventLayers.map(eventLayer => {
-                    layerProcess.push(processLayerFunction(sendThis, eventLayer));
-                  });
+                this._getAttributeConfig(function(text){
+                  var json = JSON.parse(text);
 
-                  Promise.all(layerProcess).then(function(){
-                    sendThis._downloadFile(routeId, eventMasterList, maxAttributeCount);
-                    sendThis.hideBusy();
+                  var queryPromises = [];
+                  array.forEach(eventLayers, function(eventLayer) {
+                    //Run Query and Return Promise
+                    queryPromises.push(getQuery(eventLayer, json));
+                  }, that);
+
+                  //When all promises are returned...
+                  Promise.all(queryPromises)
+                  .then(function(response){
+                    //process each result individually
+                    var processingPromises = [];
+                    array.forEach(response, function(result) {
+                      processingPromises.push(processResult(result.result, result.eventLayer, result.attributes));
+                    }, that);
+
+                    //When all processes are complete
+                    Promise.all(processingPromises)
+                    .then(function() {
+                      //Download the data
+                      that._downloadFile(routeId, eventMasterList, maxAttributeCount);
+                      that.hideBusy();
+                    })
                   })
-                } //End If Valid
-              }))
-            },
+              });
+            } //End If Valid
+          }));
+        },
 
         /*
          * Sort JSON and download as CSV
@@ -505,55 +576,60 @@ define([
           CSVUtils.exportCSV("RoadLog_" + routeId.toString(), eventMasterList, csvColumns);
           },
 
-		/*
-		 * Get Attribute Key for Events
-		 */
-		_getAttributeKey: async function(pathName){
-			var Httpreq = new XMLHttpRequest(); // a new request
-			Httpreq.open("GET",pathName,false);
-			Httpreq.send(null);
-			return await Httpreq.responseText;
-			},
+          /*
+           * Get Attributes for Events
+           */
+          _getEventAttributes: function(fieldNames, feature){
+            var eventAttributeValues = []
 
-		/*
-		 * Get Attributes for Event
-		 */
-		_getEventAttributes: function(fieldNames, feature){
-			var eventAttributeValues = []
+            array.forEach(fieldNames, function(fieldName) {
+              var fieldValue = feature.attributes[fieldName];
+              eventAttributeValues.push(fieldValue);
+              }, this);
+            return eventAttributeValues;
+          },
 
-			array.forEach(fieldNames, function(fieldName) {
-				var fieldValue = feature.attributes[fieldName];
-				eventAttributeValues.push(fieldValue);
-				}, this);
-			return eventAttributeValues ;
-			},
-			
-		/*
-  		 * Get Where Parameter
-  		 */
-  		_getWhereParameter: function(routeId, fromMeasure, toMeasure, eventType) {
-        var whereParam = "Route_ID = '" + routeId.toString() + "'";
+          /*
+           * Get attribute config file for event layers
+           */
+          _getAttributeConfig: function(callback) {
+            var rawFile = new XMLHttpRequest();
+            rawFile.overrideMimeType("application/json");
+            rawFile.open("GET", "./widgets/RoadLog/log_attributes_config.json", true);
+            rawFile.onreadystatechange = function() {
+                if (rawFile.readyState === 4 && rawFile.status == "200") {
+                    callback(rawFile.responseText);
+                }
+            }
+            rawFile.send(null);
+          },
 
-        if (eventType === "esriLRSLinearEventLayer") {
-          if (fromMeasure !== null) {
-            whereParam = whereParam + ' AND To_MPT >= ' + fromMeasure.toString();
-          }
-          if (toMeasure !== null) {
-            whereParam = whereParam + ' AND From_MPT <= ' + toMeasure.toString();
-          }
-        }
-        else {
-          if (fromMeasure !== null) {
-            whereParam = whereParam + ' AND MPT >= ' + fromMeasure.toString();
-          }
-          if (toMeasure !== null) {
-            whereParam = whereParam + ' AND MPT <= ' + toMeasure.toString();
-          }
-        }
-        return whereParam;
-  		},
+          /*
+      		 * Get Where Parameter
+      		 */
+      		_getWhereParameter: function(routeId, fromMeasure, toMeasure, eventType) {
+            var whereParam = "Route_ID = '" + routeId.toString() + "'";
 
-		/*
+            if (eventType === "esriLRSLinearEventLayer") {
+              if (fromMeasure !== null) {
+                whereParam = whereParam + ' AND To_MPT >= ' + fromMeasure.toString();
+              }
+              if (toMeasure !== null) {
+                whereParam = whereParam + ' AND From_MPT <= ' + toMeasure.toString();
+              }
+            }
+            else {
+              if (fromMeasure !== null) {
+                whereParam = whereParam + ' AND MPT >= ' + fromMeasure.toString();
+              }
+              if (toMeasure !== null) {
+                whereParam = whereParam + ' AND MPT <= ' + toMeasure.toString();
+              }
+            }
+            return whereParam;
+      		},
+
+          /*
   		 * Get Selected Event Layers
   		 */
         _getSelectedEventLayers: function() {
@@ -589,6 +665,27 @@ define([
                 }
             }, this);
             return layers;
+        },
+
+        /*
+         * Apply domain and subtype values
+         */
+        _applyDomains: function(featureSet, eventLayer) {
+            array.forEach(featureSet.features, function(feature) {
+                for (fieldName in feature.attributes) {
+                  var field = eventLayer.fields.find(function(f){
+                    return f.name == fieldName;
+                  })
+                        var codedValues = domainUtils.getCodedValues(field, eventLayer, feature.attributes);
+                        if (codedValues) {
+                            var code = feature.attributes[fieldName];
+                            var name = domainUtils.findName(codedValues, code);
+                            if (name != null && name != code) {
+                                feature.attributes[fieldName] = string.substitute(this.nls.domainCodeValue, [code, name]);
+                            }
+                        }
+                    }
+            }, this);
         },
 
         onClose: function() {
