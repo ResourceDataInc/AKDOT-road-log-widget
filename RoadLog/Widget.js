@@ -34,12 +34,14 @@ define([
     "./lrscommon/js/util/geometry",
     "./lrscommon/js/util/i18n",
     "./lrscommon/js/util/routeName",
-    "./lrscommon/js/util/utils"
+    "./lrscommon/js/util/utils",
+    "dojo/promise/Promise",
+    "dojo/promise/all"
 
 ], function(
     array, declare, lang, Deferred, DeferredList, domAttr, domConstruct, domStyle, string, CheckBox, Select, LayerStructure, SelectionManager,
     CSVUtils, Color, graphicsUtils, FeatureLayer, SimpleRenderer, PictureMarkerSymbol, SimpleLineSymbol, SimpleMarkerSymbol, FeatureSet, QueryTask, Query,
-    MeasurePicker, RoutePicker, LrsWidget, serviceInfoCache, domainUtils, geometryUtils, i18nUtils, routeNameUtils, utils
+    MeasurePicker, RoutePicker, LrsWidget, serviceInfoCache, domainUtils, geometryUtils, i18nUtils, routeNameUtils, utils, Promise, all
 ) {
     return declare([LrsWidget], {
 
@@ -48,17 +50,16 @@ define([
         _eventLayerCheckboxes: null,
         _layerStructure: null,
         _overlayLayerNodeId: null,
+        _searchByName: true,
 
         _onLrsLoaded: function() {
             this._layerStructure = LayerStructure.getInstance();
             this._setRouteInputConfig();
             this._setMeasureInputConfig();
             this._populateNetworkSelect();
-            this._getAttributeConfig(lang.hitch(this, function(text){
-              var json = JSON.parse(text);
-              this._populateEventLayers(json);
+            this._getAttributeConfig().then(lang.hitch(this, function(json) {
+              this._populateEventLayers(json)
             }));
-
             this.showContent();
         },
 
@@ -112,35 +113,36 @@ define([
 
         _setNetworkLayerAttr: function(val) {
             if (this._networkLayer != val) {
-				//Search by Route_Name
-				val.routeNameFieldName = "Route_Name";
-				//
-                this._networkLayer = val;
-                this._makeNetworkLayerVisible();
-                this._fromRouteInput.set("networkLayer", this._networkLayer);
-                if (this._networkLayer.supportsLines) {
-                    this._toRouteInput.makeRouteSelections = true;
-                    this._toRouteInput.set("networkLayer", this._networkLayer);
-                    this._toMeasureInput.set("routeInput", this._toRouteInput);
-                    domStyle.set(this._toRouteDiv, "display", "table-row");
-                    domAttr.set(this._fromRouteLabel, "innerHTML", routeNameUtils.getFromRouteLabel(this._networkLayer));
-                    domAttr.set(this._toRouteLabel, "innerHTML", routeNameUtils.getToRouteLabel(this._networkLayer));
-                } else {
-                    this._toRouteInput.clearSelection();
-                    this._toMeasureInput.set("routeInput", this._fromRouteInput);
-                    this._toRouteInput.makeRouteSelections = false;
-                    this._toRouteInput.deactivate();
-                    this._toRouteInput.setRouteValues({
-                        routeId: null,
-                        routeName: null,
-                        routeFeature: null
-                    }, false);
-                    domStyle.set(this._toRouteDiv, "display", "none");
-                    domAttr.set(this._fromRouteLabel, "innerHTML", routeNameUtils.getRouteLabel(this._networkLayer));
-                }
-                domAttr.set(this._fromMeasureLabel, "innerHTML", string.substitute(this.nls.fromMeasureWithUnits, [utils.getUnitsString(this._networkLayer.unitsOfMeasure, true)]));
-                domAttr.set(this._toMeasureLabel, "innerHTML", string.substitute(this.nls.toMeasureWithUnits, [utils.getUnitsString(this._networkLayer.unitsOfMeasure, true)]));
-            }
+              //Search by Route Name is default
+              val.routeNameFieldName = "Route_Name"
+              //
+              this._networkLayer = val;
+              this._makeNetworkLayerVisible();
+              this._fromRouteInput.set("networkLayer", this._networkLayer);
+
+              if (this._networkLayer.supportsLines) {
+                  this._toRouteInput.makeRouteSelections = true;
+                  this._toRouteInput.set("networkLayer", this._networkLayer);
+                  this._toMeasureInput.set("routeInput", this._toRouteInput);
+                  domStyle.set(this._toRouteDiv, "display", "table-row");
+                  domAttr.set(this._fromRouteLabel, "innerHTML", routeNameUtils.getFromRouteLabel(this._networkLayer));
+                  domAttr.set(this._toRouteLabel, "innerHTML", routeNameUtils.getToRouteLabel(this._networkLayer));
+              } else {
+                  this._toRouteInput.clearSelection();
+                  this._toMeasureInput.set("routeInput", this._fromRouteInput);
+                  this._toRouteInput.makeRouteSelections = false;
+                  this._toRouteInput.deactivate();
+                  this._toRouteInput.setRouteValues({
+                      routeId: null,
+                      routeName: null,
+                      routeFeature: null
+                  }, false);
+                  domStyle.set(this._toRouteDiv, "display", "none");
+                  domAttr.set(this._fromRouteLabel, "innerHTML", routeNameUtils.getRouteLabel(this._networkLayer));
+              }
+              domAttr.set(this._fromMeasureLabel, "innerHTML", string.substitute(this.nls.fromMeasureWithUnits, [utils.getUnitsString(this._networkLayer.unitsOfMeasure, true)]));
+              domAttr.set(this._toMeasureLabel, "innerHTML", string.substitute(this.nls.toMeasureWithUnits, [utils.getUnitsString(this._networkLayer.unitsOfMeasure, true)]));
+          }
         },
 
         /*
@@ -152,57 +154,84 @@ define([
         },
 
         /*
-         * Creates the event layer checkboxes
+         * Functions to change the search by settings
          */
-        _populateEventLayers: function(json) {
-            var eventsDiv = "_eventsDiv";
-            var eventLayers = this._mapManager.lrsServiceConfig.eventLayers;
-            var intersectionLayers = this._mapManager.lrsServiceConfig.intersectionLayers;
-            var unfilteredEvents = eventLayers.concat(intersectionLayers);
-
-            //Filter by config file
-            var intersectionjson = json.IntersectionLayers.map(function(layer){
-                return layer.Name;
-              });
-            var eventjson = json.EventLayers.map(function(layer){
-                return layer.Name;
-              })
-            jsonArray = eventjson.concat(intersectionjson);
-
-            var filteredEvents = unfilteredEvents.filter(function(s){
-                if (jsonArray.includes(s.name)) {
-                  return true;
-                }
-                else {
-                  return false;
-                }
-              });
-
-            //Sort alphabetically
-            filteredEvents.sort(function(a, b) {
-                if (a.name < b.name) {
-                  return -1;
-                }
-                if (a.name > b.name) {
-                  return 1;
-                }
-                // names must be equal
-                return 0;
-              });
-
-              var half = filteredEvents.length/2;
-              this._eventLayerCheckboxes = array.map(filteredEvents, function(eventLayer, i) {
-                  var parent = eventsDiv + (i < half ? "1":"2");
-                  parent = eventsDiv + "1";
-                  var label = domConstruct.create("label", {innerHTML: eventLayer.name, style: {display: "block"}}, this[parent]);
-                  var check = new CheckBox({
-                      value: eventLayer.id,
-                      checked: false
-                  });
-                  domConstruct.place(check.domNode, label, "first");
-                  return check;
-              }, this);
+        _searchByName: function() {
+          this._networkLayer.routeNameFieldName = "Route_Name";
+          domAttr.set(this._fromRouteLabel, "innerHTML", routeNameUtils.getRouteLabel(this._networkLayer));
+          this._fromRouteInput.set("networkLayer", this._networkLayer);
+          this._fromRouteInput._routeInput.required = false;
+          this._fromRouteInput._routeInput.set("value", "");
+          this._fromRouteInput._routeInput.set("routeId", null);
+          this._fromRouteInput._routeInput.set("routeName", null);
+          this._fromRouteInput._routeInput.required = true;
           },
+
+        _searchById: function() {
+          this._networkLayer.routeNameFieldName = null;
+          domAttr.set(this._fromRouteLabel, "innerHTML", routeNameUtils.getRouteLabel(this._networkLayer));
+          this._fromRouteInput.set("networkLayer", this._networkLayer);
+          this._fromRouteInput._routeInput.required = false;
+          this._fromRouteInput._routeInput.set("value", "");
+          this._fromRouteInput._routeInput.set("routeId", null);
+          this._fromRouteInput._routeInput.set("routeName", null);
+          this._fromRouteInput._routeInput.required = true;
+          },
+
+          /*
+           * Creates the Search By Radio Buttons
+           */
+          _populateEventLayers: function(json) {
+              var eventsDiv = "_eventsDiv";
+              var eventLayers = this._mapManager.lrsServiceConfig.eventLayers;
+              var intersectionLayers = this._mapManager.lrsServiceConfig.intersectionLayers;
+              var unfilteredEvents = eventLayers.concat(intersectionLayers);
+
+              //Filter by config file
+              var intersectionjson = json.IntersectionLayers.map(function(layer){
+                  return layer.Name;
+                });
+              var eventjson = json.EventLayers.map(function(layer){
+                  return layer.Name;
+                })
+              jsonArray = eventjson.concat(intersectionjson);
+
+              var filteredEvents = unfilteredEvents.filter(function(s){
+                  if (jsonArray.includes(s.name)) {
+                    return true;
+                  }
+                  else {
+                    return false;
+                  }
+                });
+
+              //Sort alphabetically
+              filteredEvents.sort(function(a, b) {
+                  if (a.name < b.name) {
+                    return -1;
+                  }
+                  if (a.name > b.name) {
+                    return 1;
+                  }
+                  // names must be equal
+                  return 0;
+                });
+
+                var half = filteredEvents.length/2;
+                this._eventLayerCheckboxes = array.map(filteredEvents, function(eventLayer, i) {
+                    var parent = eventsDiv + (i < half ? "1":"2");
+                    parent = eventsDiv + "1";
+                    var label = domConstruct.create("label", {innerHTML: eventLayer.name, style: {display: "block"}}, this[parent]);
+                    var check = new CheckBox({
+                        value: eventLayer.id,
+                        checked: false
+                    });
+                    domConstruct.place(check.domNode, label, "first");
+                    return check;
+                }, this);
+            },
+
+
 
         /*
          * Gets the routes and measures from the inputs
@@ -238,8 +267,10 @@ define([
             if (fromInvalid) {
                 if (this._networkLayer.supportsLines) {
                     this.showMessage(this.nls.enterFromRoute);
+                    this.hideBusy();
                 } else {
                     this.showMessage(this.nls.enterRoute);
+                    this.hideBusy();
                 }
                 return false;
             }
@@ -384,7 +415,7 @@ define([
 					        var fromMeasure = fromMeasureValues.measure;
                   var toMeasure = toMeasureValues.measure;
 
-                  //This function runs the query for an event layer
+                  //Declare the function that runs the query for an event layer
                   function getQuery(eventLayer, json) {
                     var eventName = eventLayer.name;
                     var eventType = eventLayer.type;
@@ -417,28 +448,24 @@ define([
                     query.outFields = ["*"];
 
                     var defd = new Deferred();
-                    var defds = [
-                        queryTask.execute(query)
-                    ];
 
-                    new DeferredList(defds).then(lang.hitch(this, function(responses) {
-                      var response = responses[0][1];
+                    queryTask.execute(query).then(lang.hitch(this, function(response) {
                       defd.resolve({eventLayer: eventLayer, result: response, attributes: eventLayerAttributeFields});
                     }));
 
                     return defd;
-                  } //End function
+                  } //End function declaration
 
-                  //This function processes the data returned from the query
+                  //Declare the function tha processes the data returned from the query
                   function processResult(featureSet, eventLayer, eventLayerAttributeFields) {
                     // apply domains
                     that._applyDomains(featureSet, eventLayer);
                     // get field aliases
                     var eventLayerAttributeFieldAliases = [];
                       array.forEach(eventLayerAttributeFields, function(f1) {
-                        var field = eventLayer.fields.find(function(f2){
+                        var field = eventLayer.fields.filter(function(f2){
                           return f2.name == f1;
-                        });
+                        })[0];
                         eventLayerAttributeFieldAliases.push(field.alias);
                       }, this);
 
@@ -462,7 +489,7 @@ define([
                           var attributeIndex = 0;
                           array.forEach(eventAttributeValues, function(attribute){
 
-                            var attributeString = "";
+                            var attributeString = "no value found";
                             if (attribute != null) {
                               attributeString  = eventAttributeValues[attributeIndex].toString();
                             }
@@ -521,11 +548,10 @@ define([
                             eventMasterList.push(eventEndJson);
                           }, that); //End Feature forEach
                         }
-                } //End function
+                } //End function declaration
 
-                this._getAttributeConfig(function(text){
-                  var json = JSON.parse(text);
-
+                this._getAttributeConfig()
+                .then(lang.hitch(this, function(json){
                   var queryPromises = [];
                   array.forEach(eventLayers, function(eventLayer) {
                     //Run Query and Return Promise
@@ -533,7 +559,7 @@ define([
                   }, that);
 
                   //When all promises are returned...
-                  Promise.all(queryPromises)
+                  all(queryPromises)
                   .then(function(response){
                     //process each result individually
                     var processingPromises = [];
@@ -542,14 +568,14 @@ define([
                     }, that);
 
                     //When all processes are complete
-                    Promise.all(processingPromises)
+                    all(processingPromises)
                     .then(function() {
                       //Download the data
                       that._downloadFile(routeId, eventMasterList, maxAttributeCount);
                       that.hideBusy();
                     })
                   })
-              });
+              }));
             } //End If Valid
           }));
         },
@@ -558,7 +584,7 @@ define([
          * Sort JSON and download as CSV
          */
         _downloadFile: function(routeId, eventMasterList, maxAttributeCount){
-          //Sort by measure and then ocation type
+          //Sort by measure and then location type
           eventMasterList.sort(function(a, b) {
             if (a.Measure === b.Measure) {
               return a.LocationSort - b.LocationSort;
@@ -592,16 +618,16 @@ define([
           /*
            * Get attribute config file for event layers
            */
-          _getAttributeConfig: function(callback) {
-            var rawFile = new XMLHttpRequest();
-            rawFile.overrideMimeType("application/json");
-            rawFile.open("GET", "./widgets/RoadLog/log_attributes_config.json", true);
-            rawFile.onreadystatechange = function() {
-                if (rawFile.readyState === 4 && rawFile.status == "200") {
-                    callback(rawFile.responseText);
+          _getAttributeConfig: function() {
+            return dojo.xhrGet({
+                url: "./widgets/RoadLog/log_attributes_config.json",
+                handleAs: "json",
+                sync: false,
+                load: function(obj) {
+                },
+                error: function(err) {
                 }
-            }
-            rawFile.send(null);
+            });
           },
 
           /*
@@ -673,15 +699,15 @@ define([
         _applyDomains: function(featureSet, eventLayer) {
             array.forEach(featureSet.features, function(feature) {
                 for (fieldName in feature.attributes) {
-                  var field = eventLayer.fields.find(function(f){
+                  var field = eventLayer.fields.filter(function(f){
                     return f.name == fieldName;
-                  })
+                  })[0];
                         var codedValues = domainUtils.getCodedValues(field, eventLayer, feature.attributes);
                         if (codedValues) {
                             var code = feature.attributes[fieldName];
                             var name = domainUtils.findName(codedValues, code);
                             if (name != null && name != code) {
-                                feature.attributes[fieldName] = string.substitute(this.nls.domainCodeValue, [code, name]);
+                                feature.attributes[fieldName] = string.substitute(this.nls.domainCodeValue, [name]);
                             }
                         }
                     }

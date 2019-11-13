@@ -1,8 +1,8 @@
 <div>
-    <div data-dojo-attach-point="_contentPanel">  
+    <div data-dojo-attach-point="_contentPanel">
         <table style="border-collapse: separate; border-spacing: 5px 8px; width: 100%">
             <tr>
-                <td>                    
+                <td>
                     <label>
                         <span class="noWrap">${nls.network}</span>
                         <select data-dojo-type="dijit/form/Select" data-dojo-attach-point="_networkSelect" data-dojo-attach-event="onChange:_onNetworkSelectChange" style="width: 100%; margin: 2px 0px;"></select>
@@ -14,7 +14,7 @@
                     <label>
                         <span class="noWrap">${nls.events}</span>
                     </label>
-                    <div style="max-height: 100px; overflow: auto;">                        
+                    <div style="max-height: 100px; overflow: auto;">
                         <table>
                             <tr>
                                 <td style="vertical-align: top;"><div data-dojo-attach-point="_eventsDiv1"></div></td>
@@ -22,22 +22,33 @@
                             </tr>
                         </table>
                     </div>
-                    <div style="padding-top: 5px;"> 
-                        <div class="jimu-btn" data-dojo-attach-event="onClick:_selectAllEvents" title="${nls.selectAll}">${nls.selectAll}</div> 
+                    <div style="padding-top: 5px;">
+                        <div class="jimu-btn" data-dojo-attach-event="onClick:_selectAllEvents" title="${nls.selectAll}">${nls.selectAll}</div>
                         <div class="jimu-btn" data-dojo-attach-event="onClick:_clearAllEvents" title="${nls.clear}">${nls.clear}</div>
                     </div>
                 </td>
             </tr>
             <tr>
-                <td>                    
+            </tr>
+            <tr>
+                <td>
+                    <div style="padding-top: 5px;">
+                      <label>
+                          <span class="noWrap">Search For Route By: </span>
+                      </label>
+                        <div class="jimu-btn" data-dojo-attach-event="onClick:_searchByName" title="Route Name">Name</div>
+                        <div class="jimu-btn" data-dojo-attach-event="onClick:_searchById" title="Route ID">ID</div>
+                    </div>
+                  <div>
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_fromRouteLabel">${nls.fromRouteName}</span>
                         <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/RoutePicker" data-dojo-attach-point="_fromRouteInput" style="width: 100%;" required></div>
                     </label>
+                  </div>
                 </td>
             </tr>
             <tr>
-                <td>                    
+                <td>
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_fromMeasureLabel">${nls.fromMeasure}</span>
                         <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/MeasurePicker" data-dojo-attach-point="_fromMeasureInput" style="width: 100%;"></select>
@@ -45,7 +56,7 @@
                 </td>
             </tr>
             <tr data-dojo-attach-point="_toRouteDiv">
-                <td>                    
+                <td>
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_toRouteLabel">${nls.toRouteName}</span>
                         <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/RoutePicker" data-dojo-attach-point="_toRouteInput" style="width: 100%;"></div>
@@ -53,7 +64,7 @@
                 </td>
             </tr>
             <tr>
-                <td>                    
+                <td>
                     <label>
                         <span class="noWrap" data-dojo-attach-point="_toMeasureLabel">${nls.toMeasure}</span>
                         <div data-dojo-type="widgets/RoadLog/lrscommon/js/form/MeasurePicker" data-dojo-attach-point="_toMeasureInput" style="width: 100%;"></select>

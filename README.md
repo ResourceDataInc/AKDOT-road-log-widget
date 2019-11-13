@@ -1,6 +1,7 @@
 # lrs-webappbuilder-widgets
 Web AppBuilder widgets for linear referencing.
-These widgets are developer samples.
+This widget was customized by Resource Data Inc., based off the Overlay Events widget forked from the following development repo:
+https://github.com/Esri/lrs-webappbuilder-widgets
 ## Sections
 
 * [Features](#features)
@@ -14,8 +15,7 @@ These widgets are developer samples.
 ## Features
 The Widget Repository currently includes:
 
-* [Route and Measure](./RouteAndMeasure)
-* [Overlay Events](./OverlayEvents)
+* [Road Log](./RoadLog)
 
 ## Requirements
 

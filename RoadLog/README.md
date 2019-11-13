@@ -1,7 +1,7 @@
 # Road Log widget
 The Road Log widget allows you to interactively generate a log report of events along a particular route.
 
-![Image of Overlay Events widget](./screenshots/widgetScreenshot.png)
+![Image of Overlay Events widget](./screenshots/widgetScreenshotName.png)
 
 ## Sections
 

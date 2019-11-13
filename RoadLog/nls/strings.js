@@ -2,7 +2,7 @@ define({
     root:({
         _widgetLabel: "Road Log",
         clear: "Clear",
-        domainCodeValue: "${0} - ${1}", // domain code, domain value
+        domainCodeValue: "${0}", // domain code, domain value
         enterFromRoute: "Choose a valid from route in the selected network.",
         enterRoute: "Choose a valid route in the selected network.",
         events: "Events",
@@ -22,6 +22,7 @@ define({
         pan: "Pan",
         queryAttributeSetError: "An error occurred while overlaying the events.",
         selectAll: "Select All",
-        zoom: "Zoom"
-    }) 
+        zoom: "Zoom",
+        searchByName: true
+    })
 });

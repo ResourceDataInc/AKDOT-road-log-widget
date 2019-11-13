@@ -26,7 +26,7 @@
 		{"Name":"Maintenance Facility", "Attributes": ["Facility_Name"]},
 		{"Name":"Maintenance Responsibility", "Attributes": ["Maint_Resp_Type", "Maint_Resp_Name"]},
 		{"Name":"Maintenance Station", "Attributes": ["Maint_Station"]},
-		{"Name":"Management Responsibility", "Attributes": ["Maint_Resp_Type", "Maint_Resp_Name"]},
+		{"Name":"Management Responsibility", "Attributes": ["Mgmt_Resp_Type", "Mgmt_Resp_Name"]},
 		{"Name":"Milepost", "Attributes": ["Milepost_Number"]},
 		{"Name":"Mountain Pass 511", "Attributes": ["Pass_Name"]},
 		{"Name":"Named Intersection", "Attributes": ["Intersection_Desc", "Intersection_ID"]},
