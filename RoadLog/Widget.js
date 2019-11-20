@@ -253,7 +253,8 @@ define([
                 var toMeasureValues = responses[1][1];
                 var fromRouteValues = responses[2][1];
                 var toRouteValues = responses.length > 3 ? responses[3][1] : null;
-                defd.resolve({fromMeasureValues: fromMeasureValues, toMeasureValues: toMeasureValues, fromRouteValues: fromRouteValues, toRouteValues: toRouteValues});
+                var routeTotalLength = responses[2][1].routeFeature.attributes.Seg_Length_Miles;
+                defd.resolve({fromMeasureValues: fromMeasureValues, toMeasureValues: toMeasureValues, fromRouteValues: fromRouteValues, toRouteValues: toRouteValues, routeTotalLength: routeTotalLength});
             }));
 
             return defd;
@@ -387,6 +388,7 @@ define([
           var eventMasterList = [];
           var routeId = null;
           var routeName = null;
+          var routeTotalLength = null;
           var maxAttributeCount = 0;
 
           var eventLayers = this._getSelectedEventLayers();
@@ -412,8 +414,52 @@ define([
                 {
                   routeId = fromRouteValues.routeId;
                   routeName = fromRouteValues.routeName;
-					        var fromMeasure = fromMeasureValues.measure;
-                  var toMeasure = toMeasureValues.measure;
+                  routeTotalLength = routesAndMeasures.routeTotalLength;
+
+					        var fromMeasure = fromMeasureValues.measure === null ? 0 : fromMeasureValues.measure;
+                  var toMeasure = toMeasureValues.measure === null ? routeTotalLength : toMeasureValues.measure;
+
+                  // Add Report Start and End Log Entries
+                  var routeStartJson = {
+                    "Route ID": routeId,
+                    "Route Name": routeName,
+                    "Measure": 0,
+                    "Feature": "",
+                    "LocationSort": -2,
+                    "Location": "Route Begin"
+                  };
+
+                  var reportStartJson = {
+                    "Route ID": routeId,
+                    "Route Name": routeName,
+                    "Measure": fromMeasure,
+                    "Feature": "",
+                    "LocationSort": -1,
+                    "Location": "Report Begin"
+                  };
+
+                  var reportEndJson = {
+                    "Route ID": routeId,
+                    "Route Name": routeName,
+                    "Measure": toMeasure,
+                    "Feature": "",
+                    "LocationSort": 4,
+                    "Location": "Report End"
+                  };
+
+                  var routeEndJson = {
+                    "Route ID": routeId,
+                    "Route Name": routeName,
+                    "Measure": routeTotalLength,
+                    "Feature": "",
+                    "LocationSort": 5,
+                    "Location": "Route End"
+                  };
+
+                  eventMasterList.push(routeStartJson);
+                  eventMasterList.push(reportStartJson);
+                  eventMasterList.push(reportEndJson);
+                  eventMasterList.push(routeEndJson);
 
                   //Declare the function that runs the query for an event layer
                   function getQuery(eventLayer, json) {
@@ -458,6 +504,8 @@ define([
 
                   //Declare the function tha processes the data returned from the query
                   function processResult(featureSet, eventLayer, eventLayerAttributeFields) {
+                    // apply precision
+                    that._applyMeasurePrecision(featureSet);
                     // apply domains
                     that._applyDomains(featureSet, eventLayer);
                     // get field aliases
@@ -510,8 +558,11 @@ define([
                           var eventEnd = toMeasure != null && feature.attributes.To_MPT > toMeasure ? toMeasure : feature.attributes.To_MPT;
                           var eventAttributes = that._getEventAttributes(eventLayerAttributeFields, feature);
 
-                            // Generate JSON objects from attribute table fields
-                            var eventStartJson = {
+                          var eventStartJson = null;
+                          var eventEndJson = null;
+
+                          // Generate JSON objects from attribute table fields
+                            eventStartJson = {
                               "Route ID": routeId,
                               "Route Name": routeName,
                               "Measure": eventStart,
@@ -520,7 +571,7 @@ define([
                               "Location": "Begin"
                             };
 
-                            var eventEndJson = {
+                            eventEndJson = {
                               "Route ID": routeId,
                               "Route Name": routeName,
                               "Measure": eventEnd,
@@ -534,20 +585,20 @@ define([
                             array.forEach(eventAttributes, function(attribute){
                               var fieldNameObject = {};
 
-                              var attributeString = "";
-                              if (attribute != null) {
+                            var attributeString = "no value found";
+                            if (attribute != null) {
                                 attributeString  = eventAttributes[attributeIndex].toString();
                               }
 
-                              eventStartJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
-                              eventEndJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
-                              attributeIndex++;
+                            eventStartJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
+                            eventEndJson["Attribute" + (attributeIndex + 1).toString()] = eventLayerAttributeFieldAliases[attributeIndex].toString() + ': ' + attributeString;
+                            attributeIndex++;
                             }, that);
 
                             eventMasterList.push(eventStartJson);
                             eventMasterList.push(eventEndJson);
-                          }, that); //End Feature forEach
-                        }
+                        }, that); //End Feature forEach
+                      }
                 } //End function declaration
 
                 this._getAttributeConfig()
@@ -712,6 +763,22 @@ define([
                         }
                     }
             }, this);
+        },
+
+        /*
+         * Round the from and to measure fields to the measure precision in config or of the network
+         */
+        _applyMeasurePrecision: function(featureSet) {
+            var networkLayer = this._networkLayer;
+            if (networkLayer && featureSet && featureSet.features) {
+                var measurePrecision = utils.isValidNumber(this._mapManager.measurePrecision) ? this._mapManager.measurePrecision : networkLayer.measurePrecision;
+                var fields = featureSet.geometryType == "esriGeometryPoint" ? ["MPT"] : ["To_MPT", "From_MPT"];
+                array.forEach(featureSet.features, function(feature) {
+                    array.forEach(fields, function(field) {
+                        feature.attributes[field] = parseFloat(i18nUtils.formatNumber(feature.attributes[field], measurePrecision));
+                    }, this);
+                }, this);
+            }
         },
 
         onClose: function() {
