@@ -196,14 +196,22 @@ define([
                 })
               jsonArray = eventjson.concat(intersectionjson);
 
-              var filteredEvents = unfilteredEvents.filter(function(s){
-                  if (jsonArray.includes(s.name)) {
+              var filteredEvents = unfilteredEvents.filter(function(uEvent){
+                var found = jsonArray.filter(function(jEvent) {
+                  if (uEvent.name === jEvent) {
                     return true;
                   }
                   else {
                     return false;
                   }
                 });
+                if (found.length > 0) {
+                  return true;
+                }
+                else {
+                  return false;
+                }
+              });
 
               //Sort alphabetically
               filteredEvents.sort(function(a, b) {
