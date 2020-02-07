@@ -65,7 +65,7 @@ define([
             panel.position.height = 564;
             panel.setPosition(panel.position);
             panel.panelManager.normalizePanel(panel);
-			
+
         },
 
         _setRouteInputConfig: function() {
@@ -226,7 +226,7 @@ define([
         _zoom: function() {
             this._panOrZoom("zoom");
         },
-        
+
         /*
          * Pans or zooms to the selected route and measures
          */
@@ -248,7 +248,7 @@ define([
                     new DeferredList(defds).then(lang.hitch(this, function(responses) {
                         this.hideBusy();
                         var fromMeasureValues = responses[0][1];
-                        var toMeasureValues = responses[1][1];  
+                        var toMeasureValues = responses[1][1];
                         if (this._areMeasuresValid(fromMeasureValues, toMeasureValues) && this._areToInputsValid(toRouteValues, toMeasureValues, fromMeasureValues)) {
                             var fromRouteId = fromRouteValues.routeId;
                             var toRouteId = toRouteValues ? toRouteValues.routeId : null;
@@ -483,7 +483,10 @@ define([
                   routeTotalLength = routesAndMeasures.routeTotalLength;
 
 					        var fromMeasure = fromMeasureValues.measure === null ? 0 : fromMeasureValues.measure;
-                  var toMeasure = toMeasureValues.measure === null ? routeTotalLength : toMeasureValues.measure;
+                  var toMeasure = toMeasureValues.measure === null && fromMeasureValues.measure === null ? routeTotalLength : toMeasureValues.measure;
+                  if (toMeasureValues.measure === null && fromMeasureValues.measure !== null) {
+                    toMeasure = fromMeasure;
+                  }
 
                   // Add Report Start and End Log Entries
                   var routeStartJson = {
@@ -625,6 +628,10 @@ define([
                           var eventEnd = toMeasure != null && feature.attributes.To_MPT > toMeasure ? toMeasure : feature.attributes.To_MPT;
                           var eventAttributes = that._getEventAttributes(eventLayerAttributeFields, feature);
 
+                          // Variables that will change if the measure is a drilldown point
+                          var eventLocation = toMeasureValues.measure === null && fromMeasureValues.measure !== null ? "Drilldown Point" : "Begin"
+                          var eventMeasure = toMeasureValues.measure === null && fromMeasureValues.measure !== null ? fromMeasureValues.measure : eventStart
+
                           var eventStartJson = null;
                           var eventEndJson = null;
 
@@ -632,10 +639,10 @@ define([
                             eventStartJson = {
                               "Route ID": routeId,
                               "Route Name": routeName,
-                              "Measure": eventStart,
+                              "Measure": eventMeasure,
                               "Feature": eventLayer.name,
                               "LocationSort": 3,
-                              "Location": "Begin"
+                              "Location": eventLocation
                             };
 
                             eventEndJson = {
@@ -662,8 +669,14 @@ define([
                             attributeIndex++;
                             }, that);
 
-                            eventMasterList.push(eventStartJson);
-                            eventMasterList.push(eventEndJson);
+                            if (toMeasureValues.measure === null && fromMeasureValues.measure !== null) {
+                              eventMasterList.push(eventStartJson);
+                            }
+                            else {
+                              eventMasterList.push(eventStartJson);
+                              eventMasterList.push(eventEndJson);
+                            }
+
                         }, that); //End Feature forEach
                       }
                 } //End function declaration
