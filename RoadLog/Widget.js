@@ -56,11 +56,16 @@ define([
             this._layerStructure = LayerStructure.getInstance();
             this._setRouteInputConfig();
             this._setMeasureInputConfig();
-            this._populateNetworkSelect();
+            this._setNetwork();
             this._getAttributeConfig().then(lang.hitch(this, function(json) {
               this._populateEventLayers(json)
             }));
             this.showContent();
+			var panel = this.getPanel();
+            panel.position.height = 564;
+            panel.setPosition(panel.position);
+            panel.panelManager.normalizePanel(panel);
+			
         },
 
         _setRouteInputConfig: function() {
@@ -90,26 +95,12 @@ define([
             this._toMeasureInput.set("measurePrecision", this._mapManager.measurePrecision);
         },
 
-        _populateNetworkSelect: function() {
-            this._networkSelect.removeOption(this._networkSelect.getOptions());
-            var networkLayers = this._mapManager.lrsServiceConfig.networkLayers;
-            var options = [];
-            array.forEach(networkLayers, function(networkLayer) {
-                options.push({
-                    label: networkLayer.name,
-                    value: networkLayer.id.toString()
-                });
-            });
-            this._networkSelect.addOption(options);
-            this._onNetworkSelectChange();
-        },
-
-        _onNetworkSelectChange: function() {
-            var networkLayer = utils.findLayer(this._networkSelect.get("value"), this._mapManager.lrsServiceConfig.networkLayers);
-            if (networkLayer && networkLayer != this._networkLayer) {
-                this.set("networkLayer", networkLayer);
-            }
-        },
+        _setNetwork: function() {
+          var networkLayer = this._mapManager.lrsServiceConfig.networkLayers[0]
+          if (networkLayer && networkLayer != this._networkLayer) {
+              this.set("networkLayer", networkLayer);
+          }
+      },
 
         _setNetworkLayerAttr: function(val) {
             if (this._networkLayer != val) {
@@ -196,22 +187,14 @@ define([
                 })
               jsonArray = eventjson.concat(intersectionjson);
 
-              var filteredEvents = unfilteredEvents.filter(function(uEvent){
-                var found = jsonArray.filter(function(jEvent) {
-                  if (uEvent.name === jEvent) {
+              var filteredEvents = unfilteredEvents.filter(function(s){
+                  if (jsonArray.includes(s.name)) {
                     return true;
                   }
                   else {
                     return false;
                   }
                 });
-                if (found.length > 0) {
-                  return true;
-                }
-                else {
-                  return false;
-                }
-              });
 
               //Sort alphabetically
               filteredEvents.sort(function(a, b) {
@@ -240,6 +223,79 @@ define([
             },
 
 
+        _zoom: function() {
+            this._panOrZoom("zoom");
+        },
+        
+        /*
+         * Pans or zooms to the selected route and measures
+         */
+        _panOrZoom: function(type) {
+            this.showBusy();
+            var mapFunc = type == "pan" ? lang.hitch(this._mapManager, this._mapManager.pan) : lang.hitch(this._mapManager, this._mapManager.zoom);
+            var defds = [this._fromRouteInput.getRouteValues()];
+            if (this._networkLayer && this._networkLayer.supportsLines) {
+                defds.push(this._toRouteInput.getRouteValues());
+            }
+            new DeferredList(defds).then(lang.hitch(this, function(responses) {
+                var fromRouteValues = responses[0][1];
+                var toRouteValues = responses.length > 1 ? responses[1][1] : null;
+                if (this._areRoutesValid(fromRouteValues, toRouteValues)) {
+                    var defds = [
+                        this._fromMeasureInput.getMeasure(),
+                        this._toMeasureInput.getMeasure()
+                    ];
+                    new DeferredList(defds).then(lang.hitch(this, function(responses) {
+                        this.hideBusy();
+                        var fromMeasureValues = responses[0][1];
+                        var toMeasureValues = responses[1][1];  
+                        if (this._areMeasuresValid(fromMeasureValues, toMeasureValues) && this._areToInputsValid(toRouteValues, toMeasureValues, fromMeasureValues)) {
+                            var fromRouteId = fromRouteValues.routeId;
+                            var toRouteId = toRouteValues ? toRouteValues.routeId : null;
+                            var fromMeasure = fromMeasureValues.measure;
+                            var toMeasure = toMeasureValues.measure;
+                            if (utils.isValidNumber(fromMeasure) && utils.isValidNumber(toMeasure)) {
+                                // both measures so zoom to from/to measure section
+                                this.showBusy();
+                                this._getPartialRoute(fromRouteId, toRouteId, fromMeasure, toMeasure).then(lang.hitch(this, function(geom) {
+                                    this.hideBusy();
+                                    mapFunc(geom);
+                                }), lang.hitch(this, function(err) {
+                                    this.hideBusy();
+                                    this.showMessage(this.nls.noMeasuresGeometry);
+                                    console.log(err);
+                                }));
+                            } else if (utils.isValidNumber(fromMeasure)) {
+                                // no to measure so zoom to from measure
+                                mapFunc(fromMeasureValues.geometry);
+                            } else if (utils.isValidNumber(toMeasure)) {
+                                // no from measure so zoom to to measure
+                                mapFunc(toMeasureValues.geometry);
+                            } else {
+                                // no measure so zoom to route
+                                var geom = null;
+                                if (toRouteId != null) {
+                                    if (this._fromRouteInput.selectionFeatures && this._fromRouteInput.selectionFeatures.length > 0) {
+                                        geom = graphicsUtils.graphicsExtent(this._fromRouteInput.selectionFeatures);
+                                    }
+                                } else {
+                                    geom = fromRouteValues.routeFeature ? fromRouteValues.routeFeature.geometry : null;
+                                }
+                                if (geom) {
+                                    mapFunc(geom);
+                                } else {
+                                    this.showMessage(this.nls.noGeometry);
+                                }
+                            }
+                        } else {
+                            this.hideBusy();
+                        }
+                    }));
+                } else {
+                    this.hideBusy();
+                }
+            }));
+        },
 
         /*
          * Gets the routes and measures from the inputs
@@ -399,6 +455,8 @@ define([
           var routeTotalLength = null;
           var maxAttributeCount = 0;
 
+		  this._zoom();
+
           var eventLayers = this._getSelectedEventLayers();
           if (eventLayers == null || eventLayers.length < 1) {
             this.showMessage(this.nls.noEventsSelected);
@@ -510,11 +568,12 @@ define([
                     return defd;
                   } //End function declaration
 
-                  //Declare the function tha processes the data returned from the query
+                  //Declare the function that processes the data returned from the query
                   function processResult(featureSet, eventLayer, eventLayerAttributeFields) {
                     // apply precision
                     that._applyMeasurePrecision(featureSet);
                     // apply domains
+                    console.log(eventLayer)
                     that._applyDomains(featureSet, eventLayer);
                     // get field aliases
                     var eventLayerAttributeFieldAliases = [];

@@ -2,19 +2,13 @@
     <div data-dojo-attach-point="_contentPanel">
         <table style="border-collapse: separate; border-spacing: 5px 8px; width: 100%">
             <tr>
-                <td>
-                    <label>
-                        <span class="noWrap">${nls.network}</span>
-                        <select data-dojo-type="dijit/form/Select" data-dojo-attach-point="_networkSelect" data-dojo-attach-event="onChange:_onNetworkSelectChange" style="width: 100%; margin: 2px 0px;"></select>
-                    </label>
-                </td>
-            </tr>
-            <tr>
+                <span>${nls.desc}</span>
+            </tr><tr>
                 <td>
                     <label>
                         <span class="noWrap">${nls.events}</span>
                     </label>
-                    <div style="max-height: 100px; overflow: auto;">
+                    <div style="max-height: 175px; overflow: auto;">
                         <table>
                             <tr>
                                 <td style="vertical-align: top;"><div data-dojo-attach-point="_eventsDiv1"></div></td>

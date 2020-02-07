@@ -23,6 +23,7 @@ define({
         queryAttributeSetError: "An error occurred while overlaying the events.",
         selectAll: "Select All",
         zoom: "Zoom",
-        searchByName: true
+        searchByName: true,
+        desc: "The road log widget creates a csv file that logs the attributes of the road in decending order."
     })
 });
